@@ -1,0 +1,12 @@
+# Virtual Environment
+agent_env/
+__pycache__/
+*.pyc
+
+# Secrets and API Keys
+.env
+credentials.json
+token.json
+
+# Local Outputs and Logs
+outputs/

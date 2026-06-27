@@ -1,0 +1,43 @@
+# ── Core ────────────────────────────────────────────────────────────────────
+requests>=2.31.0
+
+# ── Google APIs (Gmail, Calendar, Drive) ────────────────────────────────────
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.100.0
+
+# ── Telegram bot ─────────────────────────────────────────────────────────────
+python-telegram-bot>=21.0
+
+# ── Discord bot ──────────────────────────────────────────────────────────────
+discord.py>=2.3.0
+
+# ── Web search & fetch ───────────────────────────────────────────────────────
+ddgs>=0.1.0                  # DuckDuckGo search (renamed from duckduckgo-search)
+beautifulsoup4>=4.12.0
+
+# ── Speech-to-text (faster-whisper + CUDA runtime) ──────────────────────────
+# Requires CUDA Toolkit 13.3 (already installed via nvidia.com/cuda-downloads)
+# and cuDNN (installed via express installation alongside CUDA)
+faster-whisper>=1.0.0
+
+# NVIDIA CUDA runtime libraries — needed so faster-whisper/CTranslate2 can
+# find cublas and cudnn DLLs on Windows. Install after faster-whisper:
+#   pip install nvidia-cublas-cu12 nvidia-cudnn-cu12
+# If CUDA 13.x DLL mismatch occurs, use the NVIDIA PyPI index instead:
+#   pip install ctranslate2 --extra-index-url https://pypi.nvidia.com
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+
+# ── Text-to-speech (Piper — local binary, not a pip package) ────────────────
+# Download piper.exe from https://github.com/rhasspy/piper/releases
+#   → extract to local-agent/piper/piper.exe
+# Download voice model from https://huggingface.co/rhasspy/piper-voices
+#   → place en_US-lessac-medium.onnx + .onnx.json in local-agent/piper/voices/
+# No pip install needed — Piper is a standalone executable.
+
+# ── Diagram generation (Mermaid CLI — npm, not pip) ─────────────────────────
+# npm install -g @mermaid-js/mermaid-cli
+# npx puppeteer browsers install chrome-headless-shell
+# No pip install needed.

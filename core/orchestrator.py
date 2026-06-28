@@ -65,7 +65,7 @@ Rules:
   user receives.
 """
 
-MAX_STEPS = 32  # raised from 8 — compound tasks (read email + speak) need more steps
+MAX_STEPS = 16  # raised from 8 — compound tasks (read email + speak) need more steps
 
 
 class Orchestrator:
@@ -79,6 +79,9 @@ class Orchestrator:
         # Tracks the most recent gmail_draft call's body so we can verify
         # the agent actually includes it in final_answer (see _validate_final_answer)
         self._last_draft_body: str | None = None
+        # Tracks whether a calendar_delete is pending confirmation
+        self._pending_calendar_delete: bool = False
+        self._draft_validation_retries: int = 0
 
     def _load(self, filename: str) -> str:
         path = BASE_DIR / filename
@@ -130,36 +133,52 @@ class Orchestrator:
             # Draft has been sent (or attempt was made) — clear tracking
             self._last_draft_body = None
 
+        elif action == "calendar_delete":
+            # Track pending delete so we can ensure confirm_delete is actually called
+            if "About to delete" in observation:
+                self._pending_calendar_delete = True
+
+        elif action == "calendar_confirm_delete":
+            self._pending_calendar_delete = False
+
     def _validate_final_answer(self, final_answer: str) -> str | None:
         """
         Returns a correction instruction if final_answer fails validation,
         or None if it's fine to send as-is.
-
-        Currently checks: if a draft was just created, does final_answer
-        actually contain its content, or did the model just say "draft is
-        ready" without showing it?
         """
-        if self._last_draft_body is None:
-            return None
+        # Check 1: Gmail draft must be shown in full before sending
+        if self._last_draft_body is not None:
+            draft_lines = self._last_draft_body.splitlines()
+            body_lines = [l for l in draft_lines if l.strip() and not l.startswith(
+                ("Draft ready", "To:", "Subject:")
+            )]
+            if body_lines:
+                sample = " ".join(body_lines)[:60].strip()
+                if sample and sample[:30] not in final_answer:
+                    return (
+                        "Your final_answer did NOT include the actual draft text — "
+                        "it only referenced it (e.g. 'draft is ready'). Daksh cannot "
+                        "see tool Observations, only final_answer. Rewrite final_answer "
+                        "to include the FULL draft content (To, Subject, Body) copied "
+                        "directly from the gmail_draft Observation, word for word."
+                    )
 
-        # Pull a distinctive chunk from the draft (skip the "Draft ready..." header)
-        draft_lines = self._last_draft_body.splitlines()
-        body_lines = [l for l in draft_lines if l.strip() and not l.startswith(
-            ("Draft ready", "To:", "Subject:")
-        )]
-        if not body_lines:
-            return None
+        # Check 2: If calendar_delete was called but confirm_delete was NOT,
+        # the model must NOT claim the event was deleted
+        if self._pending_calendar_delete:
+            false_delete_phrases = [
+                "deleted successfully", "has been deleted", "removed from",
+                "successfully deleted", "event deleted", "deletion complete"
+            ]
+            if any(p in final_answer.lower() for p in false_delete_phrases):
+                return (
+                    "You said the event was deleted but you only called calendar_delete "
+                    "(which shows the event and waits for confirmation) — you did NOT "
+                    "call calendar_confirm_delete yet. The event has NOT been deleted. "
+                    "Tell Daksh the event details and ask for explicit confirmation "
+                    "before proceeding."
+                )
 
-        # Check if a meaningful chunk of the actual draft body appears in final_answer
-        sample = " ".join(body_lines)[:60].strip()
-        if sample and sample[:30] not in final_answer:
-            return (
-                "Your final_answer did NOT include the actual draft text — "
-                "it only referenced it (e.g. 'draft is ready'). Daksh cannot "
-                "see tool Observations, only final_answer. Rewrite final_answer "
-                "to include the FULL draft content (To, Subject, Body) copied "
-                "directly from the gmail_draft Observation, word for word."
-            )
         return None
 
     def _system_prompt(self) -> str:

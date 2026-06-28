@@ -36,6 +36,26 @@ Args: none
 Read an email and convert its body to a voice message in one step. Use this when Daksh asks to hear/read an email out loud or as a voice message. More efficient than chaining gmail_read + speak separately.
 Args: id (string (optional) — Gmail message ID; if omitted, reads the latest inbox email)
 
+## calendar_list
+List upcoming Google Calendar events. Shows title, time, location and ID for each event.
+Args: days (int (optional, default 7) — how many days ahead to look), max (int (optional, default 10) — max events to return)
+
+## calendar_create
+Create a new event on Google Calendar. Always confirm the details with Daksh before creating.
+Args: title (string — event title), start (string — start datetime e.g. '2026-06-28 14:00' or 'tomorrow 3pm'), end (string (optional) — end datetime; defaults to 1 hour after start), description (string (optional) — event description or notes), location (string (optional) — event location)
+
+## calendar_update
+Update an existing calendar event by its ID (from calendar_list). Only provide fields to change.
+Args: id (string — event ID from calendar_list), title (string (optional) — new title), start (string (optional) — new start datetime), end (string (optional) — new end datetime), description (string (optional) — new description), location (string (optional) — new location)
+
+## calendar_delete
+Initiate deletion of a calendar event. Shows the event and waits for Daksh's confirmation before deleting.
+Args: id (string — event ID from calendar_list)
+
+## calendar_confirm_delete
+Confirm and execute a pending calendar event deletion. Only call after calendar_delete and explicit user confirmation.
+Args: none
+
 ## generate_diagram
 Generate a diagram from a plain English description. Converts the description to Mermaid syntax and renders it to a PNG image (viewable inline in Discord/Telegram) that opens automatically. Supports flowcharts, sequence diagrams, ER diagrams, mind maps, Gantt charts, state diagrams, and more.
 Args: description (string — plain English description of what the diagram should show), format (string (optional, default 'png') — output format: 'png' (renders inline in Discord/Telegram) or 'svg' (downloads only))

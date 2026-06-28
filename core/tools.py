@@ -171,6 +171,29 @@ def _render_mermaid(args: dict) -> str:
     return render_mermaid(args)
 
 
+# ── Calendar tool functions ──────────────────────────────────────────────────
+
+def _calendar_list(args: dict) -> str:
+    from tools.calendar import calendar_list
+    return calendar_list(args)
+
+def _calendar_create(args: dict) -> str:
+    from tools.calendar import calendar_create
+    return calendar_create(args)
+
+def _calendar_update(args: dict) -> str:
+    from tools.calendar import calendar_update
+    return calendar_update(args)
+
+def _calendar_delete(args: dict) -> str:
+    from tools.calendar import calendar_delete
+    return calendar_delete(args)
+
+def _calendar_confirm_delete(args: dict) -> str:
+    from tools.calendar import calendar_confirm_delete
+    return calendar_confirm_delete(args)
+
+
 # ── Web tool functions ───────────────────────────────────────────────────────
 
 def _web_search(args: dict) -> str:
@@ -259,6 +282,51 @@ TOOLS = {
         "args_schema": {
             "id": "string (optional) — Gmail message ID; if omitted, reads the latest inbox email",
         },
+    },
+
+    # Google Calendar
+    "calendar_list": {
+        "func": _calendar_list,
+        "description": "List upcoming Google Calendar events. Shows title, time, location and ID for each event.",
+        "args_schema": {
+            "days": "int (optional, default 7) — how many days ahead to look",
+            "max":  "int (optional, default 10) — max events to return",
+        },
+    },
+    "calendar_create": {
+        "func": _calendar_create,
+        "description": "Create a new event on Google Calendar. Always confirm the details with Daksh before creating.",
+        "args_schema": {
+            "title":       "string — event title",
+            "start":       "string — start datetime e.g. '2026-06-28 14:00' or 'tomorrow 3pm'",
+            "end":         "string (optional) — end datetime; defaults to 1 hour after start",
+            "description": "string (optional) — event description or notes",
+            "location":    "string (optional) — event location",
+        },
+    },
+    "calendar_update": {
+        "func": _calendar_update,
+        "description": "Update an existing calendar event by its ID (from calendar_list). Only provide fields to change.",
+        "args_schema": {
+            "id":          "string — event ID from calendar_list",
+            "title":       "string (optional) — new title",
+            "start":       "string (optional) — new start datetime",
+            "end":         "string (optional) — new end datetime",
+            "description": "string (optional) — new description",
+            "location":    "string (optional) — new location",
+        },
+    },
+    "calendar_delete": {
+        "func": _calendar_delete,
+        "description": "Initiate deletion of a calendar event. Shows the event and waits for Daksh's confirmation before deleting.",
+        "args_schema": {
+            "id": "string — event ID from calendar_list",
+        },
+    },
+    "calendar_confirm_delete": {
+        "func": _calendar_confirm_delete,
+        "description": "Confirm and execute a pending calendar event deletion. Only call after calendar_delete and explicit user confirmation.",
+        "args_schema": {},
     },
 
     # Diagrams

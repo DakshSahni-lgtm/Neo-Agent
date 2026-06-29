@@ -56,6 +56,42 @@ Args: id (string — event ID from calendar_list)
 Confirm and execute a pending calendar event deletion. Only call after calendar_delete and explicit user confirmation.
 Args: none
 
+## sheets_search_contact
+Search for a contact by name in the Google Sheets contact list. Returns email, phone, company and relationship for all matches. If multiple people share a name, shows disambiguation info and asks Daksh which one to use before proceeding. Always use this before emailing someone by name — never guess an email address.
+Args: name (string — name to search for (partial names and first names work))
+
+## sheets_add_contact
+Add a new contact to the Google Sheets contact list.
+Args: name (string — full name), email (string — email address), phone (string (optional)), company (string (optional)), relationship (string (optional) — e.g. Client, Friend, Business Partner), notes (string (optional))
+
+## sheets_read
+Read data from any Google Sheet by ID and range. Returns formatted table output.
+Args: sheet_id (string — the Google Sheet ID from its URL), range (string (optional) — A1 notation e.g. 'Sheet1!A1:E20' (default: full Sheet1))
+
+## sheets_create
+Create a new Google Spreadsheet. Returns the new sheet's ID and URL. Use this whenever Daksh asks to create a spreadsheet, tracker, log, or table.
+Args: name (string — spreadsheet title), headers (list or comma-separated string (optional) — column headers for row 1 e.g. ['Name','Revenue','Date']), data (list of lists (optional) — initial data rows e.g. [['Daksh',1000],['River Tech',5000]])
+
+## sheets_write
+Write (overwrite) data to a specific range in any Google Sheet. Use to update existing cells, set headers, or rewrite a table section.
+Args: sheet_id (string — spreadsheet ID), range (string — A1 notation e.g. 'Sheet1!A1' or 'Sheet1!B2:D10'), data (list of lists or JSON string — rows to write e.g. [['Name','Age'],['Daksh',18]]), clear_first (bool (optional, default false) — clear the range before writing)
+
+## sheets_append
+Append new rows to the end of existing data in a Google Sheet. Safe to call repeatedly — always adds below the last row.
+Args: sheet_id (string — spreadsheet ID), data (list of lists or JSON string — rows to append e.g. [['Daksh',1000,'June']]), sheet_name (string (optional, default 'Sheet1') — which tab to append to)
+
+## drive_list
+List files and folders in Google Drive. Use this when Daksh asks what files he has, to browse Drive contents, or to find a folder. Use drive_search when looking for a specific file by name.
+Args: folder_id (string (optional) — list a specific folder's contents by ID; default lists root My Drive), max (int (optional, default 20) — max items to return), type (string (optional) — filter by type: 'doc', 'sheet', 'pdf', 'folder')
+
+## drive_search
+Search for files in Google Drive by name. Returns file names, IDs, types, and links.
+Args: query (string — file name or partial name to search for), max (int (optional, default 10) — max results), type (string (optional) — filter by type: 'doc', 'sheet', 'pdf', 'folder')
+
+## drive_read
+Read the text content of a Google Doc or Sheet from Drive. Use file_id from drive_search.
+Args: file_id (string — Drive file ID from drive_search), max_chars (int (optional, default 6000) — max characters to return)
+
 ## generate_diagram
 Generate a diagram from a plain English description. Converts the description to Mermaid syntax and renders it to a PNG image (viewable inline in Discord/Telegram) that opens automatically. Supports flowcharts, sequence diagrams, ER diagrams, mind maps, Gantt charts, state diagrams, and more.
 Args: description (string — plain English description of what the diagram should show), format (string (optional, default 'png') — output format: 'png' (renders inline in Discord/Telegram) or 'svg' (downloads only))

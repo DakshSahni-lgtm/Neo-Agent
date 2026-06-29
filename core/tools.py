@@ -55,7 +55,7 @@ def _gmail_send(args: dict) -> str:
 
 # ── Diagram tool functions ───────────────────────────────────────────────────
 
-def generate_diagram(args: dict) -> str:
+def _generate_diagram(args: dict) -> str:
     from tools.diagrams import generate_diagram
     return generate_diagram(args)
 
@@ -194,6 +194,45 @@ def _calendar_confirm_delete(args: dict) -> str:
     return calendar_confirm_delete(args)
 
 
+# ── Sheets / Drive tool functions ────────────────────────────────────────────
+
+def _sheets_search_contact(args: dict) -> str:
+    from tools.sheets import sheets_search_contact
+    return sheets_search_contact(args)
+
+def _sheets_add_contact(args: dict) -> str:
+    from tools.sheets import sheets_add_contact
+    return sheets_add_contact(args)
+
+def _sheets_read(args: dict) -> str:
+    from tools.sheets import sheets_read
+    return sheets_read(args)
+
+def _sheets_create(args: dict) -> str:
+    from tools.sheets import sheets_create
+    return sheets_create(args)
+
+def _sheets_write(args: dict) -> str:
+    from tools.sheets import sheets_write
+    return sheets_write(args)
+
+def _sheets_append(args: dict) -> str:
+    from tools.sheets import sheets_append
+    return sheets_append(args)
+
+def _drive_list(args: dict) -> str:
+    from tools.sheets import drive_list
+    return drive_list(args)
+
+def _drive_search(args: dict) -> str:
+    from tools.sheets import drive_search
+    return drive_search(args)
+
+def _drive_read(args: dict) -> str:
+    from tools.sheets import drive_read
+    return drive_read(args)
+
+
 # ── Web tool functions ───────────────────────────────────────────────────────
 
 def _web_search(args: dict) -> str:
@@ -329,6 +368,108 @@ TOOLS = {
         "args_schema": {},
     },
 
+    # Google Sheets / Drive
+    "sheets_search_contact": {
+        "func": _sheets_search_contact,
+        "description": (
+            "Search for a contact by name in the Google Sheets contact list. "
+            "Returns email, phone, company and relationship for all matches. "
+            "If multiple people share a name, shows disambiguation info and asks Daksh "
+            "which one to use before proceeding. Always use this before emailing someone "
+            "by name — never guess an email address."
+        ),
+        "args_schema": {
+            "name": "string — name to search for (partial names and first names work)",
+        },
+    },
+    "sheets_add_contact": {
+        "func": _sheets_add_contact,
+        "description": "Add a new contact to the Google Sheets contact list.",
+        "args_schema": {
+            "name":         "string — full name",
+            "email":        "string — email address",
+            "phone":        "string (optional)",
+            "company":      "string (optional)",
+            "relationship": "string (optional) — e.g. Client, Friend, Business Partner",
+            "notes":        "string (optional)",
+        },
+    },
+    "sheets_read": {
+        "func": _sheets_read,
+        "description": "Read data from any Google Sheet by ID and range. Returns formatted table output.",
+        "args_schema": {
+            "sheet_id": "string — the Google Sheet ID from its URL",
+            "range":    "string (optional) — A1 notation e.g. 'Sheet1!A1:E20' (default: full Sheet1)",
+        },
+    },
+    "sheets_create": {
+        "func": _sheets_create,
+        "description": (
+            "Create a new Google Spreadsheet. Returns the new sheet's ID and URL. "
+            "Use this whenever Daksh asks to create a spreadsheet, tracker, log, or table."
+        ),
+        "args_schema": {
+            "name":    "string — spreadsheet title",
+            "headers": "list or comma-separated string (optional) — column headers for row 1 e.g. ['Name','Revenue','Date']",
+            "data":    "list of lists (optional) — initial data rows e.g. [['Daksh',1000],['River Tech',5000]]",
+        },
+    },
+    "sheets_write": {
+        "func": _sheets_write,
+        "description": (
+            "Write (overwrite) data to a specific range in any Google Sheet. "
+            "Use to update existing cells, set headers, or rewrite a table section."
+        ),
+        "args_schema": {
+            "sheet_id":    "string — spreadsheet ID",
+            "range":       "string — A1 notation e.g. 'Sheet1!A1' or 'Sheet1!B2:D10'",
+            "data":        "list of lists or JSON string — rows to write e.g. [['Name','Age'],['Daksh',18]]",
+            "clear_first": "bool (optional, default false) — clear the range before writing",
+        },
+    },
+    "sheets_append": {
+        "func": _sheets_append,
+        "description": (
+            "Append new rows to the end of existing data in a Google Sheet. "
+            "Safe to call repeatedly — always adds below the last row."
+        ),
+        "args_schema": {
+            "sheet_id":   "string — spreadsheet ID",
+            "data":       "list of lists or JSON string — rows to append e.g. [['Daksh',1000,'June']]",
+            "sheet_name": "string (optional, default 'Sheet1') — which tab to append to",
+        },
+    },
+    "drive_list": {
+        "func": _drive_list,
+        "description": (
+            "List files and folders in Google Drive. Use this when Daksh asks "
+            "what files he has, to browse Drive contents, or to find a folder. "
+            "Use drive_search when looking for a specific file by name."
+        ),
+        "args_schema": {
+            "folder_id": "string (optional) — list a specific folder's contents by ID; default lists root My Drive",
+            "max":       "int (optional, default 20) — max items to return",
+            "type":      "string (optional) — filter by type: 'doc', 'sheet', 'pdf', 'folder'",
+        },
+    },
+    "drive_search": {
+        "func": _drive_search,
+        "description": "Search for files in Google Drive by name. Returns file names, IDs, types, and links.",
+        "args_schema": {
+            "query": "string — file name or partial name to search for",
+            "max":   "int (optional, default 10) — max results",
+            "type":  "string (optional) — filter by type: 'doc', 'sheet', 'pdf', 'folder'",
+        },
+    },
+    "drive_read": {
+        "func": _drive_read,
+        "description": "Read the text content of a Google Doc or Sheet from Drive. Use file_id from drive_search.",
+        "args_schema": {
+            "file_id":   "string — Drive file ID from drive_search",
+            "max_chars": "int (optional, default 6000) — max characters to return",
+        },
+    },
+
     # Diagrams
     "generate_diagram": {
         "func": _generate_diagram,
@@ -414,3 +555,4 @@ def init_tools(llm_client) -> None:
     """
     from tools.diagrams import set_llm_client
     set_llm_client(llm_client)
+

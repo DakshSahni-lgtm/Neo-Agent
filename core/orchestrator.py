@@ -65,7 +65,7 @@ Rules:
   user receives.
 """
 
-MAX_STEPS = 16  # raised from 8 — compound tasks (read email + speak) need more steps
+MAX_STEPS = 32  # raised from 8 — compound tasks (read email + speak) need more steps
 
 
 class Orchestrator:

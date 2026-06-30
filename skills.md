@@ -69,8 +69,8 @@ Read data from any Google Sheet by ID and range. Returns formatted table output.
 Args: sheet_id (string — the Google Sheet ID from its URL), range (string (optional) — A1 notation e.g. 'Sheet1!A1:E20' (default: full Sheet1))
 
 ## sheets_create
-Create a new Google Spreadsheet. Returns the new sheet's ID and URL. Use this whenever Daksh asks to create a spreadsheet, tracker, log, or table.
-Args: name (string — spreadsheet title), headers (list or comma-separated string (optional) — column headers for row 1 e.g. ['Name','Revenue','Date']), data (list of lists (optional) — initial data rows e.g. [['Daksh',1000],['River Tech',5000]])
+Create a new Google Spreadsheet. Returns the new sheet's ID and URL. Optionally create it directly inside a specific Drive folder.
+Args: name (string — spreadsheet title), headers (list or comma-separated string (optional) — column headers for row 1), data (list of lists (optional) — initial data rows), folder_name (string (optional) — create inside this Drive folder (searched by name)), folder_id (string (optional) — create inside this folder ID (more precise than folder_name))
 
 ## sheets_write
 Write (overwrite) data to a specific range in any Google Sheet. Use to update existing cells, set headers, or rewrite a table section.
@@ -79,6 +79,10 @@ Args: sheet_id (string — spreadsheet ID), range (string — A1 notation e.g. 'Shee
 ## sheets_append
 Append new rows to the end of existing data in a Google Sheet. Safe to call repeatedly — always adds below the last row.
 Args: sheet_id (string — spreadsheet ID), data (list of lists or JSON string — rows to append e.g. [['Daksh',1000,'June']]), sheet_name (string (optional, default 'Sheet1') — which tab to append to)
+
+## drive_move
+Move a file or spreadsheet to a different folder in Google Drive. Search by folder name — if multiple folders match, shows options to disambiguate.
+Args: file_id (string — ID of the file to move (from drive_list or drive_search)), folder_name (string — name of the destination folder (searches Drive by name)), folder_id (string — destination folder ID (use instead of folder_name if you have the ID))
 
 ## drive_list
 List files and folders in Google Drive. Use this when Daksh asks what files he has, to browse Drive contents, or to find a folder. Use drive_search when looking for a specific file by name.
@@ -89,8 +93,12 @@ Search for files in Google Drive by name. Returns file names, IDs, types, and li
 Args: query (string — file name or partial name to search for), max (int (optional, default 10) — max results), type (string (optional) — filter by type: 'doc', 'sheet', 'pdf', 'folder')
 
 ## drive_read
-Read the text content of a Google Doc or Sheet from Drive. Use file_id from drive_search.
+Read RAW text content of a file from Google Drive — supports Google Docs, Sheets, Slides, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), plain text/markdown/CSV files, and PDFs. Returns unprocessed extracted text. Use drive_read_and_explain instead if Daksh wants analysis/summary, not raw text.
 Args: file_id (string — Drive file ID from drive_search), max_chars (int (optional, default 6000) — max characters to return)
+
+## drive_read_and_explain
+Read a Drive file AND analyze/explain its contents using the LLM — e.g. count invoices, extract names and amounts from a document, summarize key points. Use this whenever Daksh asks 'what's inside', 'tell me about', or asks a specific question about a document's content, rather than wanting raw text dumped.
+Args: file_id (string — Drive file ID from drive_list or drive_search), question (string (optional) — specific question to answer about the content, e.g. 'how many invoices and what amounts?')
 
 ## generate_diagram
 Generate a diagram from a plain English description. Converts the description to Mermaid syntax and renders it to a PNG image (viewable inline in Discord/Telegram) that opens automatically. Supports flowcharts, sequence diagrams, ER diagrams, mind maps, Gantt charts, state diagrams, and more.

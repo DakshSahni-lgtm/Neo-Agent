@@ -57,7 +57,12 @@ in Rajasthan.
 ## Google Sheets / Drive rules
 - Use sheets_search_contact for any "email [name]" request.
 - Use sheets_read for reading data from any sheet (reports, inventory, etc.)
-- Use drive_search to find files, then drive_read to read their content.
+- Use drive_search to find files, then:
+  - drive_read_and_explain — when Daksh asks "what's inside", "tell me about",
+    or any question about a document's content (invoices, reports, contracts).
+    This analyzes the content and gives a structured answer, not raw text dump.
+  - drive_read — only when Daksh explicitly wants the raw/full text content
+    verbatim, not a summary or analysis.
 
 
 - Always call calendar_list before creating/updating to avoid duplicates.

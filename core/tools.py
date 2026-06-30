@@ -220,6 +220,10 @@ def _sheets_append(args: dict) -> str:
     from tools.sheets import sheets_append
     return sheets_append(args)
 
+def _drive_move(args: dict) -> str:
+    from tools.sheets import drive_move
+    return drive_move(args)
+
 def _drive_list(args: dict) -> str:
     from tools.sheets import drive_list
     return drive_list(args)
@@ -231,6 +235,10 @@ def _drive_search(args: dict) -> str:
 def _drive_read(args: dict) -> str:
     from tools.sheets import drive_read
     return drive_read(args)
+
+def _drive_read_and_explain(args: dict) -> str:
+    from tools.sheets import drive_read_and_explain
+    return drive_read_and_explain(args)
 
 
 # ── Web tool functions ───────────────────────────────────────────────────────
@@ -406,12 +414,14 @@ TOOLS = {
         "func": _sheets_create,
         "description": (
             "Create a new Google Spreadsheet. Returns the new sheet's ID and URL. "
-            "Use this whenever Daksh asks to create a spreadsheet, tracker, log, or table."
+            "Optionally create it directly inside a specific Drive folder."
         ),
         "args_schema": {
-            "name":    "string — spreadsheet title",
-            "headers": "list or comma-separated string (optional) — column headers for row 1 e.g. ['Name','Revenue','Date']",
-            "data":    "list of lists (optional) — initial data rows e.g. [['Daksh',1000],['River Tech',5000]]",
+            "name":        "string — spreadsheet title",
+            "headers":     "list or comma-separated string (optional) — column headers for row 1",
+            "data":        "list of lists (optional) — initial data rows",
+            "folder_name": "string (optional) — create inside this Drive folder (searched by name)",
+            "folder_id":   "string (optional) — create inside this folder ID (more precise than folder_name)",
         },
     },
     "sheets_write": {
@@ -439,6 +449,18 @@ TOOLS = {
             "sheet_name": "string (optional, default 'Sheet1') — which tab to append to",
         },
     },
+    "drive_move": {
+        "func": _drive_move,
+        "description": (
+            "Move a file or spreadsheet to a different folder in Google Drive. "
+            "Search by folder name — if multiple folders match, shows options to disambiguate."
+        ),
+        "args_schema": {
+            "file_id":     "string — ID of the file to move (from drive_list or drive_search)",
+            "folder_name": "string — name of the destination folder (searches Drive by name)",
+            "folder_id":   "string — destination folder ID (use instead of folder_name if you have the ID)",
+        },
+    },
     "drive_list": {
         "func": _drive_list,
         "description": (
@@ -463,10 +485,29 @@ TOOLS = {
     },
     "drive_read": {
         "func": _drive_read,
-        "description": "Read the text content of a Google Doc or Sheet from Drive. Use file_id from drive_search.",
+        "description": (
+            "Read RAW text content of a file from Google Drive — supports Google Docs, "
+            "Sheets, Slides, Word (.docx), PowerPoint (.pptx), Excel (.xlsx), "
+            "plain text/markdown/CSV files, and PDFs. Returns unprocessed extracted text. "
+            "Use drive_read_and_explain instead if Daksh wants analysis/summary, not raw text."
+        ),
         "args_schema": {
             "file_id":   "string — Drive file ID from drive_search",
             "max_chars": "int (optional, default 6000) — max characters to return",
+        },
+    },
+    "drive_read_and_explain": {
+        "func": _drive_read_and_explain,
+        "description": (
+            "Read a Drive file AND analyze/explain its contents using the LLM — "
+            "e.g. count invoices, extract names and amounts from a document, "
+            "summarize key points. Use this whenever Daksh asks 'what's inside', "
+            "'tell me about', or asks a specific question about a document's content, "
+            "rather than wanting raw text dumped."
+        ),
+        "args_schema": {
+            "file_id":  "string — Drive file ID from drive_list or drive_search",
+            "question": "string (optional) — specific question to answer about the content, e.g. 'how many invoices and what amounts?'",
         },
     },
 
@@ -551,8 +592,10 @@ def run_tool(name: str, args: dict) -> str:
 def init_tools(llm_client) -> None:
     """
     Call this after creating the LLM client to wire it into tools that need it.
-    Currently used by the diagram tool to generate Mermaid syntax.
+    Used by diagram generation and drive_read_and_explain document analysis.
     """
-    from tools.diagrams import set_llm_client
-    set_llm_client(llm_client)
+    from tools.diagrams import set_llm_client as set_diagram_llm
+    set_diagram_llm(llm_client)
 
+    from tools.sheets import set_llm_client as set_sheets_llm
+    set_sheets_llm(llm_client)

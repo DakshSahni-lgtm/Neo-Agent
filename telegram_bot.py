@@ -43,6 +43,8 @@ except ImportError:
 
 from core.orchestrator import Orchestrator
 from core.llm_client import LLMClient
+from core.scheduler import AgentScheduler
+from tools.scheduler_tool import set_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -67,6 +69,36 @@ agent = Orchestrator(llm=LLMClient())
 # Rolling conversation history — Telegram is single-user so one global list
 _conversation_history: list[dict] = []
 HISTORY_MAX_MESSAGES = 20
+
+
+def _send_to_telegram(message: str) -> None:
+    """
+    Send a message directly via Telegram's HTTP Bot API — used by the
+    scheduler's background thread, which has no access to the bot's
+    async event loop. A plain HTTP POST works from any thread.
+    """
+    import requests
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    # Telegram caps messages at 4096 chars — chunk if needed
+    for i in range(0, len(message), 4000):
+        chunk = message[i:i + 4000]
+        try:
+            requests.post(url, json={"chat_id": ALLOWED_USER_ID, "text": chunk}, timeout=15)
+        except Exception as e:
+            logger.error(f"[scheduler] Failed to send scheduled message: {e}")
+
+
+# Set up the proactive scheduler — safe to do at import time since the
+# send callback uses plain HTTP, no event loop dependency
+agent_scheduler: AgentScheduler | None = None
+try:
+    agent_scheduler = AgentScheduler(agent=agent, send_callback=_send_to_telegram)
+    agent_scheduler.start()
+    agent_scheduler.load_saved_tasks()
+    set_scheduler(agent_scheduler)
+    print("[scheduler] Ready — agent can now schedule proactive tasks")
+except RuntimeError as e:
+    print(f"[scheduler] Not available: {e}")
 
 BASE_DIR = Path(__file__).parent
 

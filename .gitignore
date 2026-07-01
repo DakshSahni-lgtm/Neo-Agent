@@ -10,6 +10,7 @@ credentials.json
 token.json
 calendar_token.json
 sheets_token.json
+scheduled_tasks.json
 
 # Local Outputs and Logs
 outputs/

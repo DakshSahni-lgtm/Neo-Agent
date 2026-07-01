@@ -52,6 +52,8 @@ except ImportError:
 
 from core.orchestrator import Orchestrator
 from core.llm_client import LLMClient
+from core.scheduler import AgentScheduler
+from tools.scheduler_tool import set_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
@@ -75,6 +77,9 @@ DISCORD_MAX_LEN = 2000  # Discord's hard message length limit
 # One orchestrator instance persists for the bot's lifetime —
 # session context (e.g. last email read) carries across messages naturally.
 agent = Orchestrator(llm=LLMClient())
+
+# Proactive scheduler — set up fully in on_ready() once the event loop is running
+agent_scheduler: AgentScheduler | None = None
 
 # Rolling conversation history — keeps the last N exchanges so the agent
 # remembers what was discussed earlier in the same session.
@@ -147,6 +152,37 @@ def _transcribe_audio(audio_path: Path) -> str:
 async def on_ready():
     print(f"[discord] Logged in as {client.user}")
     print(f"[discord] Listening for messages from user ID: {ALLOWED_USER_ID}")
+
+    # Set up the proactive scheduler now that we have a running event loop
+    # and can DM the allowed user
+    global agent_scheduler
+    loop = asyncio.get_running_loop()
+
+    def send_to_discord(message: str) -> None:
+        """
+        Called from the scheduler's background thread — must hop back onto
+        Discord's event loop safely using run_coroutine_threadsafe.
+        """
+        async def _send():
+            try:
+                user = await client.fetch_user(ALLOWED_USER_ID)
+                dm = await user.create_dm()
+                for chunk in _split_message(message):
+                    await dm.send(chunk)
+            except Exception as e:
+                logger.error(f"[scheduler] Failed to send scheduled message: {e}")
+
+        asyncio.run_coroutine_threadsafe(_send(), loop)
+
+    try:
+        agent_scheduler = AgentScheduler(agent=agent, send_callback=send_to_discord)
+        agent_scheduler.start()
+        agent_scheduler.load_saved_tasks()
+        set_scheduler(agent_scheduler)
+        print("[scheduler] Ready — agent can now schedule proactive tasks")
+    except RuntimeError as e:
+        print(f"[scheduler] Not available: {e}")
+
     print("[discord] Bot ready. (Ctrl+C to stop)")
 
 

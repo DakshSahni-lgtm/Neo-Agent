@@ -100,6 +100,22 @@ Args: file_id (string — Drive file ID from drive_search), max_chars (int (option
 Read a Drive file AND analyze/explain its contents using the LLM — e.g. count invoices, extract names and amounts from a document, summarize key points. Use this whenever Daksh asks 'what's inside', 'tell me about', or asks a specific question about a document's content, rather than wanting raw text dumped.
 Args: file_id (string — Drive file ID from drive_list or drive_search), question (string (optional) — specific question to answer about the content, e.g. 'how many invoices and what amounts?')
 
+## schedule_daily_task
+Schedule a task to run automatically every day at a specific time — e.g. morning briefings, daily reminders. The prompt runs as if Daksh typed it himself, and the result is sent to him automatically.
+Args: name (string — short name for the task, e.g. 'Morning briefing'), prompt (string — the instruction to run each time, e.g. 'Check my calendar for today and summarize unread emails'), time (string — 24-hour time e.g. '08:00' or '17:30')
+
+## schedule_interval_task
+Schedule a task to run automatically every N minutes (minimum 15). Use for frequent recurring checks.
+Args: name (string — short name for the task), prompt (string — the instruction to run each time), minutes (int — how often to run, minimum 15 minutes)
+
+## list_scheduled_tasks
+List all currently scheduled proactive tasks with their timing and IDs.
+Args: none
+
+## cancel_scheduled_task
+Cancel a scheduled task by its ID. Get the ID from list_scheduled_tasks first.
+Args: id (string — task ID from list_scheduled_tasks)
+
 ## generate_diagram
 Generate a diagram from a plain English description. Converts the description to Mermaid syntax and renders it to a PNG image (viewable inline in Discord/Telegram) that opens automatically. Supports flowcharts, sequence diagrams, ER diagrams, mind maps, Gantt charts, state diagrams, and more.
 Args: description (string — plain English description of what the diagram should show), format (string (optional, default 'png') — output format: 'png' (renders inline in Discord/Telegram) or 'svg' (downloads only))

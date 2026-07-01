@@ -119,8 +119,105 @@ def test_draft_hallucination_forced_correction():
     print(f"  ✓ Draft content was force-included after repeated hallucination")
 
 
+def test_tool_error_hallucination_caught():
+    """
+    Reproduces the exact bug: schedule_daily_task fails (scheduler not
+    initialized), but the model claims success anyway. The orchestrator
+    should reject that final_answer and force an honest retry.
+    """
+    print("Running: tool error hallucination gets caught and corrected...")
+
+    error_observation = "Error: scheduler not initialized"
+
+    scripted = [
+        # Step 1: call schedule_daily_task, which fails
+        json.dumps({
+            "thought": "Scheduling the daily joke task.",
+            "action": "schedule_daily_task",
+            "action_input": {"name": "Daily joke", "prompt": "Tell a joke", "time": "12:00"},
+            "final_answer": None,
+        }),
+        # Step 2: model hallucinates success despite the error
+        json.dumps({
+            "thought": "Task is scheduled.",
+            "action": None, "action_input": {},
+            "final_answer": "Done! I've scheduled a daily joke task for 12:00 PM every day.",
+        }),
+        # Step 3: after correction, model finally tells the truth
+        json.dumps({
+            "thought": "I need to be honest about the failure.",
+            "action": None, "action_input": {},
+            "final_answer": "That actually failed — the scheduler wasn't initialized. Error: scheduler not initialized",
+        }),
+    ]
+
+    agent = Orchestrator(llm=MockLLM(scripted))
+
+    import core.orchestrator as orch_module
+    original_run_tool = orch_module.run_tool
+
+    def fake_run_tool(name, args):
+        if name == "schedule_daily_task":
+            return error_observation
+        return original_run_tool(name, args)
+
+    orch_module.run_tool = fake_run_tool
+    try:
+        result = agent.run("Tell me a joke every day at 12pm.")
+    finally:
+        orch_module.run_tool = original_run_tool
+
+    assert "failed" in result.lower() or "error" in result.lower(), (
+        f"Expected honest failure message, got: {result}"
+    )
+    assert "done!" not in result.lower(), f"Hallucinated success leaked through: {result}"
+    print(f"  ✓ Tool error was not hidden by a false success claim")
+
+
+def test_stepfun_xml_tool_call_format_parsed():
+    """
+    Reproduces the exact bug: Stepfun sometimes emits its native
+    <tool_call><function=X> XML format instead of JSON, despite instructions.
+    The orchestrator must recognize and parse this instead of looping
+    until MAX_STEPS is exhausted.
+    """
+    print("Running: Stepfun XML tool_call format is parsed correctly...")
+
+    scripted = [
+        # Step 1: model emits its native XML format instead of JSON
+        "<tool_call>\n<function=list_scheduled_tasks>\n</function>\n</tool_call>",
+        # Step 2: after the tool runs, model gives a normal JSON final answer
+        json.dumps({
+            "thought": "Got the task list.",
+            "action": None, "action_input": {},
+            "final_answer": "You have no scheduled tasks right now.",
+        }),
+    ]
+
+    agent = Orchestrator(llm=MockLLM(scripted))
+
+    import core.orchestrator as orch_module
+    original_run_tool = orch_module.run_tool
+
+    def fake_run_tool(name, args):
+        if name == "list_scheduled_tasks":
+            return "No scheduled tasks currently set up."
+        return original_run_tool(name, args)
+
+    orch_module.run_tool = fake_run_tool
+    try:
+        result = agent.run("What scheduled tasks do I have?")
+    finally:
+        orch_module.run_tool = original_run_tool
+
+    assert "no scheduled tasks" in result.lower(), f"Expected clean answer, got: {result}"
+    print(f"  ✓ XML tool_call format was parsed without looping to MAX_STEPS")
+
+
 if __name__ == "__main__":
     test_memory_tool()
     test_direct_answer()
     test_draft_hallucination_forced_correction()
+    test_tool_error_hallucination_caught()
+    test_stepfun_xml_tool_call_format_parsed()
     print("\nAll tests passed.")

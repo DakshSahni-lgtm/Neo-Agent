@@ -41,6 +41,8 @@ Only call read_memory if you need to verify memory AFTER an append.
 
 # CRITICAL: Response format
 Respond with ONLY a single raw JSON object — no markdown fences, no extra text.
+Do NOT use any other tool-calling format like <tool_call> or <function=name>
+XML tags — ONLY the JSON object shown below is valid.
 
 {{
   "thought": "step-by-step reasoning about what to do",
@@ -65,7 +67,7 @@ Rules:
   user receives.
 """
 
-MAX_STEPS = 32  # raised from 8 — compound tasks (read email + speak) need more steps
+MAX_STEPS = 16  # raised from 8 — compound tasks (read email + speak) need more steps
 
 
 class Orchestrator:
@@ -82,6 +84,10 @@ class Orchestrator:
         # Tracks whether a calendar_delete is pending confirmation
         self._pending_calendar_delete: bool = False
         self._draft_validation_retries: int = 0
+        # Tracks (action_name, error_text) for the most recent tool call that
+        # returned an Error observation — used to catch the model claiming
+        # success anyway (see _validate_final_answer)
+        self._last_tool_error: tuple[str, str] | None = None
 
     def _load(self, filename: str) -> str:
         path = BASE_DIR / filename
@@ -141,6 +147,23 @@ class Orchestrator:
         elif action == "calendar_confirm_delete":
             self._pending_calendar_delete = False
 
+        # Universal error tracking: if ANY tool observation starts with
+        # "Error", remember it so we can catch the model claiming success
+        # anyway (same hallucination pattern as drafts/deletes, generalized)
+        first_line = observation.split("\n")[0].strip()
+        if first_line.startswith("Error") or first_line.startswith("Error:"):
+            self._last_tool_error = (action, observation[:300])
+        elif action in (
+            "schedule_daily_task", "schedule_interval_task",
+            "gmail_send", "calendar_create", "calendar_update",
+            "sheets_create", "sheets_write", "sheets_append",
+            "drive_move", "cancel_scheduled_task",
+        ):
+            # These are success/failure-sensitive actions — clear error
+            # tracking only when they succeed (no "Error" prefix) so the
+            # validator doesn't flag a stale error from an earlier step
+            self._last_tool_error = None
+
     def _validate_final_answer(self, final_answer: str) -> str | None:
         """
         Returns a correction instruction if final_answer fails validation,
@@ -179,6 +202,24 @@ class Orchestrator:
                     "before proceeding."
                 )
 
+        # Check 3: A tool call failed (returned an Error observation) but
+        # final_answer describes success anyway — catch this generically
+        # across ALL tools, not just drafts/deletes
+        if self._last_tool_error is not None:
+            action_name, error_text = self._last_tool_error
+            success_phrases = [
+                "done!", "successfully", "created", "scheduled", "sent",
+                "added", "saved", "updated", "moved", "completed", "set up",
+            ]
+            if any(p in final_answer.lower() for p in success_phrases):
+                return (
+                    f"The tool call '{action_name}' actually returned an ERROR: "
+                    f"{error_text}\n\n"
+                    f"Your final_answer claims success, but this did NOT actually work. "
+                    f"Tell Daksh honestly that it failed and share the real error message "
+                    f"above — do not describe a successful outcome."
+                )
+
         return None
 
     def _system_prompt(self) -> str:
@@ -190,15 +231,66 @@ class Orchestrator:
         )
 
     @staticmethod
+    def _parse_xml_tool_call(text: str) -> dict | None:
+        """
+        Fallback parser for Stepfun's native tool-calling format, which it
+        sometimes emits despite JSON instructions:
+
+            <tool_call>
+            <function=tool_name>
+            <parameter=key>value</parameter>
+            </function>
+            </tool_call>
+
+        Converts this into our standard {thought, action, action_input,
+        final_answer} dict. Returns None if the text doesn't match this format.
+        """
+        func_match = re.search(
+            r"<tool_call>\s*<function=([\w]+)>(.*?)</function>\s*</tool_call>",
+            text, re.DOTALL,
+        )
+        if not func_match:
+            return None
+
+        tool_name = func_match.group(1).strip()
+        params_block = func_match.group(2)
+
+        action_input = {}
+        for param_match in re.finditer(
+            r"<parameter=([\w]+)>(.*?)</parameter>", params_block, re.DOTALL
+        ):
+            key = param_match.group(1).strip()
+            val = param_match.group(2).strip()
+            action_input[key] = val
+
+        return {
+            "thought": f"(parsed from native tool_call format: {tool_name})",
+            "action": tool_name,
+            "action_input": action_input,
+            "final_answer": None,
+        }
+
+    @staticmethod
     def _parse(raw: str) -> dict:
         if raw is None:
             raise ValueError("LLM returned None — model may not support this parameter combination")
         text = raw.strip()
         text = re.sub(r"^```(json)?\s*|\s*```$", "", text, flags=re.MULTILINE).strip()
+
+        # Try standard JSON format first
         match = re.search(r"\{.*\}", text, re.DOTALL)
-        if not match:
-            raise ValueError(f"No JSON object in response: {text!r}")
-        return json.loads(match.group(0))
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass  # fall through to XML fallback below
+
+        # Fallback: Stepfun's native <tool_call><function=X> format
+        xml_result = Orchestrator._parse_xml_tool_call(text)
+        if xml_result is not None:
+            return xml_result
+
+        raise ValueError(f"No JSON object or recognized tool_call format in response: {text!r}")
 
     def run(
         self,

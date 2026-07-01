@@ -241,6 +241,25 @@ def _drive_read_and_explain(args: dict) -> str:
     return drive_read_and_explain(args)
 
 
+# ── Scheduler tool functions ─────────────────────────────────────────────────
+
+def _schedule_daily_task(args: dict) -> str:
+    from tools.scheduler_tool import schedule_daily_task
+    return schedule_daily_task(args)
+
+def _schedule_interval_task(args: dict) -> str:
+    from tools.scheduler_tool import schedule_interval_task
+    return schedule_interval_task(args)
+
+def _list_scheduled_tasks(args: dict) -> str:
+    from tools.scheduler_tool import list_scheduled_tasks
+    return list_scheduled_tasks(args)
+
+def _cancel_scheduled_task(args: dict) -> str:
+    from tools.scheduler_tool import cancel_scheduled_task
+    return cancel_scheduled_task(args)
+
+
 # ── Web tool functions ───────────────────────────────────────────────────────
 
 def _web_search(args: dict) -> str:
@@ -511,6 +530,42 @@ TOOLS = {
         },
     },
 
+    # Proactive scheduling
+    "schedule_daily_task": {
+        "func": _schedule_daily_task,
+        "description": (
+            "Schedule a task to run automatically every day at a specific time — "
+            "e.g. morning briefings, daily reminders. The prompt runs as if Daksh "
+            "typed it himself, and the result is sent to him automatically."
+        ),
+        "args_schema": {
+            "name":   "string — short name for the task, e.g. 'Morning briefing'",
+            "prompt": "string — the instruction to run each time, e.g. 'Check my calendar for today and summarize unread emails'",
+            "time":   "string — 24-hour time e.g. '08:00' or '17:30'",
+        },
+    },
+    "schedule_interval_task": {
+        "func": _schedule_interval_task,
+        "description": "Schedule a task to run automatically every N minutes (minimum 15). Use for frequent recurring checks.",
+        "args_schema": {
+            "name":    "string — short name for the task",
+            "prompt":  "string — the instruction to run each time",
+            "minutes": "int — how often to run, minimum 15 minutes",
+        },
+    },
+    "list_scheduled_tasks": {
+        "func": _list_scheduled_tasks,
+        "description": "List all currently scheduled proactive tasks with their timing and IDs.",
+        "args_schema": {},
+    },
+    "cancel_scheduled_task": {
+        "func": _cancel_scheduled_task,
+        "description": "Cancel a scheduled task by its ID. Get the ID from list_scheduled_tasks first.",
+        "args_schema": {
+            "id": "string — task ID from list_scheduled_tasks",
+        },
+    },
+
     # Diagrams
     "generate_diagram": {
         "func": _generate_diagram,
@@ -599,3 +654,4 @@ def init_tools(llm_client) -> None:
 
     from tools.sheets import set_llm_client as set_sheets_llm
     set_sheets_llm(llm_client)
+

@@ -267,6 +267,46 @@ async def on_message(message: discord.Message):
             except Exception:
                 pass
 
+    # ── Image handling ───────────────────────────────────────────────────────
+    # Discord images arrive as attachments with an image/* content type.
+    # Analyze with the vision model and fold the description into user_text —
+    # same pattern as voice transcription above.
+    image_attachments = [
+        a for a in message.attachments
+        if a.content_type and a.content_type.startswith("image/")
+    ]
+
+    if image_attachments:
+        attachment = image_attachments[0]
+        logger.info(f"[vision] Analyzing image: {attachment.filename} ({attachment.size} bytes)")
+
+        try:
+            image_bytes = await attachment.read()
+
+            # If the user included a caption, use it as the vision question;
+            # otherwise use the default general description prompt
+            vision_question = user_text.strip() if user_text.strip() else None
+
+            loop = asyncio.get_running_loop()
+
+            def _analyze():
+                from tools.vision import describe_image_from_bytes, DEFAULT_QUESTION
+                q = vision_question or DEFAULT_QUESTION
+                return describe_image_from_bytes(image_bytes, q, filename=attachment.filename)
+
+            description = await loop.run_in_executor(None, _analyze)
+            logger.info(f"[vision] Analysis: {description[:150]}")
+
+            if user_text.strip():
+                user_text = f"{user_text}\n[image: {description}]"
+            else:
+                user_text = f"[User sent an image] {description}"
+
+        except Exception as e:
+            logger.error(f"[vision] Image analysis failed: {e}", exc_info=True)
+            await message.channel.send(f"Image analysis failed: {e}")
+            return
+
     if not user_text:
         return
 

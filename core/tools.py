@@ -241,6 +241,13 @@ def _drive_read_and_explain(args: dict) -> str:
     return drive_read_and_explain(args)
 
 
+# ── Vision tool functions ────────────────────────────────────────────────────
+
+def _analyze_image(args: dict) -> str:
+    from tools.vision import analyze_image
+    return analyze_image(args)
+
+
 # ── Scheduler tool functions ─────────────────────────────────────────────────
 
 def _schedule_daily_task(args: dict) -> str:
@@ -530,6 +537,22 @@ TOOLS = {
         },
     },
 
+    # Vision
+    "analyze_image": {
+        "func": _analyze_image,
+        "description": (
+            "Analyze an image file already saved on disk (e.g. a generated diagram, "
+            "or an image downloaded from Drive/email) — describes contents, reads text "
+            "in the image (OCR), explains charts/diagrams. NOTE: images sent directly "
+            "in chat are already analyzed automatically before you see the message — "
+            "only use this tool for images that exist as files on disk."
+        ),
+        "args_schema": {
+            "path":     "string — path to the image file on disk",
+            "question": "string (optional) — specific question to ask about the image",
+        },
+    },
+
     # Proactive scheduling
     "schedule_daily_task": {
         "func": _schedule_daily_task,
@@ -654,4 +677,3 @@ def init_tools(llm_client) -> None:
 
     from tools.sheets import set_llm_client as set_sheets_llm
     set_sheets_llm(llm_client)
-

@@ -168,6 +168,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         finally:
             if tmp_path.exists():
                 tmp_path.unlink()
+
+    # ── Image handling ───────────────────────────────────────────────────────
+    # Telegram sends photos as update.message.photo — a list of resolutions,
+    # largest last. Any caption becomes the vision question.
+    elif update.message.photo:
+        photo = update.message.photo[-1]  # highest resolution available
+        caption = (update.message.caption or "").strip()
+
+        try:
+            await context.bot.send_chat_action(
+                chat_id=update.effective_chat.id, action="typing"
+            )
+            tg_file = await context.bot.get_file(photo.file_id)
+
+            import asyncio
+            import io
+            image_bytes = bytes(await tg_file.download_as_bytearray())
+
+            logger.info(f"[vision] Analyzing Telegram photo ({len(image_bytes)} bytes)")
+
+            loop = asyncio.get_running_loop()
+
+            def _analyze():
+                from tools.vision import describe_image_from_bytes, DEFAULT_QUESTION
+                q = caption if caption else DEFAULT_QUESTION
+                return describe_image_from_bytes(image_bytes, q, filename="photo.jpg")
+
+            description = await loop.run_in_executor(None, _analyze)
+            logger.info(f"[vision] Analysis: {description[:150]}")
+
+            if caption:
+                user_text = f"{caption}\n[image: {description}]"
+            else:
+                user_text = f"[User sent an image] {description}"
+
+        except Exception as e:
+            logger.error(f"[vision] Image analysis failed: {e}")
+            await update.message.reply_text(f"Image analysis failed: {e}")
+            return
+
     else:
         user_text = update.message.text or ""
 
@@ -221,12 +261,11 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def main():
     assert BOT_TOKEN is not None
-    assert BOT_TOKEN is not None
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", handle_start))
-    # Handle both text messages and voice/audio messages
+    # Handle text, voice/audio, and photo messages
     app.add_handler(MessageHandler(
-        (filters.TEXT | filters.VOICE | filters.AUDIO) & ~filters.COMMAND,
+        (filters.TEXT | filters.VOICE | filters.AUDIO | filters.PHOTO) & ~filters.COMMAND,
         handle_message
     ))
 

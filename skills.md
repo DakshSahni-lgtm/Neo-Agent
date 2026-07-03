@@ -100,6 +100,10 @@ Args: file_id (string — Drive file ID from drive_search), max_chars (int (option
 Read a Drive file AND analyze/explain its contents using the LLM — e.g. count invoices, extract names and amounts from a document, summarize key points. Use this whenever Daksh asks 'what's inside', 'tell me about', or asks a specific question about a document's content, rather than wanting raw text dumped.
 Args: file_id (string — Drive file ID from drive_list or drive_search), question (string (optional) — specific question to answer about the content, e.g. 'how many invoices and what amounts?')
 
+## analyze_image
+Analyze an image file already saved on disk (e.g. a generated diagram, or an image downloaded from Drive/email) — describes contents, reads text in the image (OCR), explains charts/diagrams. NOTE: images sent directly in chat are already analyzed automatically before you see the message — only use this tool for images that exist as files on disk.
+Args: path (string — path to the image file on disk), question (string (optional) — specific question to ask about the image)
+
 ## schedule_daily_task
 Schedule a task to run automatically every day at a specific time — e.g. morning briefings, daily reminders. The prompt runs as if Daksh typed it himself, and the result is sent to him automatically.
 Args: name (string — short name for the task, e.g. 'Morning briefing'), prompt (string — the instruction to run each time, e.g. 'Check my calendar for today and summarize unread emails'), time (string — 24-hour time e.g. '08:00' or '17:30')

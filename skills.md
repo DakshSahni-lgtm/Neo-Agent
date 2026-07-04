@@ -112,6 +112,14 @@ Args: name (string — short name for the task, e.g. 'Morning briefing'), prompt (
 Schedule a task to run automatically every N minutes (minimum 15). Use for frequent recurring checks.
 Args: name (string — short name for the task), prompt (string — the instruction to run each time), minutes (int — how often to run, minimum 15 minutes)
 
+## schedule_one_time_task
+Schedule a task to run through the agent ONCE at a specific time, then it removes itself. Use for one-off reminders/checks — e.g. 'remind me to check the oven at 6pm'. NOT for recurring tasks (use schedule_daily_task/schedule_interval_task) and NOT for sending an already-confirmed email at a later time (use schedule_email_send).
+Args: name (string — short name for the task), prompt (string — self-contained instruction to run at that time (no conversation history will be available then — make it clear and standalone)), time (string — when to run: '15:00', '3pm', 'tomorrow 9am', or a full datetime like '2026-07-01 15:00')
+
+## schedule_email_send
+Schedule an ALREADY-CONFIRMED email to be sent at a specific future time. The email is sent EXACTLY as given — deterministic, no re-drafting or LLM reasoning happens at send time. ALWAYS show Daksh the draft (to/subject/body) and get explicit confirmation of both content AND the send time before calling this. Use this instead of gmail_send whenever a future time is specified (e.g. 'send this at 3pm').
+Args: to (string — recipient email address), subject (string — email subject), body (string — full email body), time (string — when to send: '15:00', '3pm', 'tomorrow 9am', or a full datetime), reply_to_id (string (optional) — original message ID to thread the reply correctly)
+
 ## list_scheduled_tasks
 List all currently scheduled proactive tasks with their timing and IDs.
 Args: none

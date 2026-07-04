@@ -241,30 +241,21 @@ def gmail_draft(args: dict) -> str:
     )
 
 
-def gmail_send(args: dict) -> str:
+def _send_email_now(draft: dict) -> str:
     """
-    Send the pending draft created by gmail_draft.
-    Only call this after Daksh explicitly confirms (e.g. 'yes', 'send it', 'confirm').
-    Args: none (uses the stored draft)
+    Core send logic — sends an email given explicit to/subject/body
+    (and optional reply_to_id for threading). Used by both gmail_send
+    (immediate, from _pending_draft) and the scheduled direct-action
+    handler (deterministic, no LLM re-reasoning at send time).
     """
-    global _pending_draft
-
-    if not _pending_draft:
-        return (
-            "No draft pending. Use gmail_draft first to compose a reply, "
-            "then confirm to send it."
-        )
-
     try:
         service = _get_service()
-        draft   = _pending_draft
 
         msg = MIMEMultipart()
         msg["To"]      = draft["to"]
         msg["Subject"] = draft["subject"]
         msg.attach(MIMEText(draft["body"], "plain"))
 
-        # Thread the reply if we have the original message ID
         if draft.get("reply_to_id"):
             original = service.users().messages().get(
                 userId="me", id=draft["reply_to_id"], format="metadata",
@@ -288,11 +279,36 @@ def gmail_send(args: dict) -> str:
             userId="me", body=body_payload
         ).execute()
 
-        sent_to      = draft["to"]
-        sent_subject = draft["subject"]
-        _pending_draft = None  # clear after sending
-
-        return f"Email sent to {sent_to} — Subject: {sent_subject}"
+        return f"Email sent to {draft['to']} — Subject: {draft['subject']}"
 
     except Exception as e:
         return f"Error sending email: {e}"
+
+
+def gmail_send(args: dict) -> str:
+    """
+    Send the pending draft created by gmail_draft.
+    Only call this after Daksh explicitly confirms (e.g. 'yes', 'send it', 'confirm').
+    Args: none (uses the stored draft)
+    """
+    global _pending_draft
+
+    if not _pending_draft:
+        return (
+            "No draft pending. Use gmail_draft first to compose a reply, "
+            "then confirm to send it."
+        )
+
+    result = _send_email_now(_pending_draft)
+    if not result.startswith("Error"):
+        _pending_draft = None  # clear only on success
+    return result
+
+
+def _scheduled_send_email_action(action_data: dict) -> str:
+    """
+    Direct-action handler registered with the scheduler for deterministic
+    scheduled email sends. Called by core/scheduler.py at the scheduled
+    time — bypasses the LLM entirely, sends exactly the confirmed content.
+    """
+    return _send_email_now(action_data)

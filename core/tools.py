@@ -258,6 +258,14 @@ def _schedule_interval_task(args: dict) -> str:
     from tools.scheduler_tool import schedule_interval_task
     return schedule_interval_task(args)
 
+def _schedule_one_time_task(args: dict) -> str:
+    from tools.scheduler_tool import schedule_one_time_task
+    return schedule_one_time_task(args)
+
+def _schedule_email_send(args: dict) -> str:
+    from tools.scheduler_tool import schedule_email_send
+    return schedule_email_send(args)
+
 def _list_scheduled_tasks(args: dict) -> str:
     from tools.scheduler_tool import list_scheduled_tasks
     return list_scheduled_tasks(args)
@@ -576,6 +584,37 @@ TOOLS = {
             "minutes": "int — how often to run, minimum 15 minutes",
         },
     },
+    "schedule_one_time_task": {
+        "func": _schedule_one_time_task,
+        "description": (
+            "Schedule a task to run through the agent ONCE at a specific time, then it "
+            "removes itself. Use for one-off reminders/checks — e.g. 'remind me to check "
+            "the oven at 6pm'. NOT for recurring tasks (use schedule_daily_task/schedule_interval_task) "
+            "and NOT for sending an already-confirmed email at a later time (use schedule_email_send)."
+        ),
+        "args_schema": {
+            "name":   "string — short name for the task",
+            "prompt": "string — self-contained instruction to run at that time (no conversation history will be available then — make it clear and standalone)",
+            "time":   "string — when to run: '15:00', '3pm', 'tomorrow 9am', or a full datetime like '2026-07-01 15:00'",
+        },
+    },
+    "schedule_email_send": {
+        "func": _schedule_email_send,
+        "description": (
+            "Schedule an ALREADY-CONFIRMED email to be sent at a specific future time. "
+            "The email is sent EXACTLY as given — deterministic, no re-drafting or LLM "
+            "reasoning happens at send time. ALWAYS show Daksh the draft (to/subject/body) "
+            "and get explicit confirmation of both content AND the send time before calling this. "
+            "Use this instead of gmail_send whenever a future time is specified (e.g. 'send this at 3pm')."
+        ),
+        "args_schema": {
+            "to":          "string — recipient email address",
+            "subject":     "string — email subject",
+            "body":        "string — full email body",
+            "time":        "string — when to send: '15:00', '3pm', 'tomorrow 9am', or a full datetime",
+            "reply_to_id": "string (optional) — original message ID to thread the reply correctly",
+        },
+    },
     "list_scheduled_tasks": {
         "func": _list_scheduled_tasks,
         "description": "List all currently scheduled proactive tasks with their timing and IDs.",
@@ -677,3 +716,4 @@ def init_tools(llm_client) -> None:
 
     from tools.sheets import set_llm_client as set_sheets_llm
     set_sheets_llm(llm_client)
+

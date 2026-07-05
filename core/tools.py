@@ -258,6 +258,10 @@ def _schedule_interval_task(args: dict) -> str:
     from tools.scheduler_tool import schedule_interval_task
     return schedule_interval_task(args)
 
+def _schedule_content_delivery(args: dict) -> str:
+    from tools.scheduler_tool import schedule_content_delivery
+    return schedule_content_delivery(args)
+
 def _schedule_one_time_task(args: dict) -> str:
     from tools.scheduler_tool import schedule_one_time_task
     return schedule_one_time_task(args)
@@ -584,17 +588,36 @@ TOOLS = {
             "minutes": "int — how often to run, minimum 15 minutes",
         },
     },
+    "schedule_content_delivery": {
+        "func": _schedule_content_delivery,
+        "description": (
+            "Schedule already-prepared content (a diagram, voice message, or plain text) "
+            "to be delivered at a specific future time WITHOUT regenerating it. Use when "
+            "Daksh wants something made NOW but sent LATER, unchanged — e.g. 'make this "
+            "diagram now but send it to me at 5pm'. First call generate_diagram/speak/etc. "
+            "to create the content NOW, THEN call this with the exact result text "
+            "(including any file path mentioned) so it attaches automatically at delivery time."
+        ),
+        "args_schema": {
+            "text": "string — the finalized message/content to deliver, including any file path from a prior tool result",
+            "time": "string — when to deliver: '15:00', '3pm', 'tomorrow 9am', or a full datetime",
+            "name": "string (optional) — short label for this delivery",
+        },
+    },
     "schedule_one_time_task": {
         "func": _schedule_one_time_task,
         "description": (
-            "Schedule a task to run through the agent ONCE at a specific time, then it "
-            "removes itself. Use for one-off reminders/checks — e.g. 'remind me to check "
-            "the oven at 6pm'. NOT for recurring tasks (use schedule_daily_task/schedule_interval_task) "
-            "and NOT for sending an already-confirmed email at a later time (use schedule_email_send)."
+            "Schedule ANYTHING to happen ONCE at a future time, then it removes itself. "
+            "This runs the full agent with access to EVERY tool — not just reminders. "
+            "Use for: text reminders, scheduled voice messages (via speak), scheduled "
+            "diagrams (via generate_diagram), delayed calendar/email checks, delayed web "
+            "searches — any one-off future action except sending a pre-confirmed email "
+            "(use schedule_email_send for that specific case). "
+            "NOT for recurring tasks (use schedule_daily_task/schedule_interval_task)."
         ),
         "args_schema": {
             "name":   "string — short name for the task",
-            "prompt": "string — self-contained instruction to run at that time (no conversation history will be available then — make it clear and standalone)",
+            "prompt": "string — self-contained instruction to run at that time (no conversation history will be available then — make it clear and standalone, e.g. 'Generate a voice message saying good morning' or 'Create a flowchart diagram of X')",
             "time":   "string — when to run: '15:00', '3pm', 'tomorrow 9am', or a full datetime like '2026-07-01 15:00'",
         },
     },
@@ -716,4 +739,3 @@ def init_tools(llm_client) -> None:
 
     from tools.sheets import set_llm_client as set_sheets_llm
     set_sheets_llm(llm_client)
-

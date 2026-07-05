@@ -214,10 +214,111 @@ def test_stepfun_xml_tool_call_format_parsed():
     print(f"  ✓ XML tool_call format was parsed without looping to MAX_STEPS")
 
 
+def test_stale_draft_does_not_leak_into_unrelated_turns():
+    """
+    Reproduces the exact bug: draft a scheduled email (via schedule_email_send
+    instead of gmail_send), then ask a completely unrelated question in the
+    NEXT run() call. The stale draft content must NOT be force-appended to
+    that unrelated answer — this was happening because _last_draft_body was
+    only ever cleared by gmail_send, not schedule_email_send.
+    """
+    print("Running: stale draft does not leak into unrelated future turns...")
+
+    draft_observation = (
+        "Draft ready (NOT sent). Review it below, then say 'send it' to send.\n\n"
+        "To:      vansh@example.com\n"
+        "Subject: Shipment Delay Notification\n"
+        "\nHi Vansh,\n\nThis is to inform you that the shipment has been delayed.\n"
+        "\nBest,\nDaksh"
+    )
+
+    import core.orchestrator as orch_module
+    original_run_tool = orch_module.run_tool
+
+    def fake_run_tool(name, args):
+        if name == "gmail_draft":
+            return draft_observation
+        if name == "schedule_email_send":
+            return "Email scheduled to send at 2026-07-01 11:20!\nTo: vansh@example.com"
+        if name == "list_scheduled_tasks":
+            return "Scheduled tasks (1):\n\u2022 Send email to vansh (once at 2026-07-01 11:20)"
+        return original_run_tool(name, args)
+
+    orch_module.run_tool = fake_run_tool
+    try:
+        # Turn 1: draft + schedule the email (mirrors the real bug report)
+        agent = Orchestrator(llm=MockLLM([
+            json.dumps({
+                "thought": "Drafting the email.",
+                "action": "gmail_draft",
+                "action_input": {"to": "vansh@example.com", "subject": "Shipment Delay Notification", "body": "..."},
+                "final_answer": None,
+            }),
+            json.dumps({
+                "thought": "Show the draft and ask for confirmation.",
+                "action": None, "action_input": {},
+                "final_answer": (
+                    "Here's your draft to Vansh:\n\nHi Vansh,\n\nThis is to inform you "
+                    "that the shipment has been delayed.\n\nBest,\nDaksh\n\n"
+                    "Confirm sending at 11:20?"
+                ),
+            }),
+        ]))
+        turn1_result = agent.run("send an email to vansh at 11:20 am telling him the shipment is delayed")
+        assert turn1_result.count("This is to inform you") == 1, (
+            f"Draft content should appear exactly once in turn 1, got: {turn1_result}"
+        )
+
+        # Turn 2: user confirms — model calls schedule_email_send (NOT gmail_send)
+        agent.llm = MockLLM([
+            json.dumps({
+                "thought": "Confirmed — scheduling the send.",
+                "action": "schedule_email_send",
+                "action_input": {"to": "vansh@example.com", "subject": "Shipment Delay Notification",
+                                  "body": "...", "time": "11:20"},
+                "final_answer": None,
+            }),
+            json.dumps({
+                "thought": "Done.",
+                "action": None, "action_input": {},
+                "final_answer": "Your email to Vansh is scheduled to send at 11:20 am.",
+            }),
+        ])
+        turn2_result = agent.run("yes")
+        assert "This is to inform you" not in turn2_result, (
+            f"Stale draft leaked into turn 2 confirmation: {turn2_result}"
+        )
+
+        # Turn 3: a COMPLETELY unrelated question — the actual bug scenario
+        agent.llm = MockLLM([
+            json.dumps({
+                "thought": "Checking scheduled tasks.",
+                "action": "list_scheduled_tasks",
+                "action_input": {},
+                "final_answer": None,
+            }),
+            json.dumps({
+                "thought": "Got the list.",
+                "action": None, "action_input": {},
+                "final_answer": "You have 1 scheduled task: sending an email to Vansh at 11:20am.",
+            }),
+        ])
+        turn3_result = agent.run("what scheduled tasks do you have right now?")
+        assert "This is to inform you" not in turn3_result, (
+            f"Stale draft leaked into an unrelated turn 3 question: {turn3_result}"
+        )
+
+    finally:
+        orch_module.run_tool = original_run_tool
+
+    print(f"  ✓ Stale draft did not leak into unrelated future turns")
+
+
 if __name__ == "__main__":
     test_memory_tool()
     test_direct_answer()
     test_draft_hallucination_forced_correction()
     test_tool_error_hallucination_caught()
     test_stepfun_xml_tool_call_format_parsed()
+    test_stale_draft_does_not_leak_into_unrelated_turns()
     print("\nAll tests passed.")

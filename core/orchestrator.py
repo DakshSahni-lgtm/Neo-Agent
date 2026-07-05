@@ -89,6 +89,15 @@ class Orchestrator:
         # success anyway (see _validate_final_answer)
         self._last_tool_error: tuple[str, str] | None = None
 
+        # Turn counter — incremented once per run() call. Cross-turn trackers
+        # (_pending_calendar_delete, _last_tool_error) record which turn they
+        # were set on, and are only enforced for that turn or the immediately
+        # next one — this prevents a stale, unconfirmed action from silently
+        # leaking into unrelated conversations many turns later.
+        self._turn_counter: int = 0
+        self._pending_calendar_delete_turn: int = -10
+        self._last_tool_error_turn: int = -10
+
     def _load(self, filename: str) -> str:
         path = BASE_DIR / filename
         return path.read_text() if path.exists() else f"({filename} not found)"
@@ -143,6 +152,7 @@ class Orchestrator:
             # Track pending delete so we can ensure confirm_delete is actually called
             if "About to delete" in observation:
                 self._pending_calendar_delete = True
+                self._pending_calendar_delete_turn = self._turn_counter
 
         elif action == "calendar_confirm_delete":
             self._pending_calendar_delete = False
@@ -153,11 +163,14 @@ class Orchestrator:
         first_line = observation.split("\n")[0].strip()
         if first_line.startswith("Error") or first_line.startswith("Error:"):
             self._last_tool_error = (action, observation[:300])
+            self._last_tool_error_turn = self._turn_counter
         elif action in (
             "schedule_daily_task", "schedule_interval_task",
+            "schedule_one_time_task", "schedule_email_send",
+            "schedule_content_delivery", "cancel_scheduled_task",
             "gmail_send", "calendar_create", "calendar_update",
             "sheets_create", "sheets_write", "sheets_append",
-            "drive_move", "cancel_scheduled_task",
+            "drive_move",
         ):
             # These are success/failure-sensitive actions — clear error
             # tracking only when they succeed (no "Error" prefix) so the
@@ -169,26 +182,41 @@ class Orchestrator:
         Returns a correction instruction if final_answer fails validation,
         or None if it's fine to send as-is.
         """
-        # Check 1: Gmail draft must be shown in full before sending
+        # Check 1: Gmail draft must be shown in full before sending.
+        # Uses lenient word-overlap matching (not a rigid substring) so
+        # minor rewording/reformatting by the model doesn't false-positive
+        # and trigger a duplicate forced-append of the raw draft text.
         if self._last_draft_body is not None:
             draft_lines = self._last_draft_body.splitlines()
             body_lines = [l for l in draft_lines if l.strip() and not l.startswith(
                 ("Draft ready", "To:", "Subject:")
             )]
             if body_lines:
-                sample = " ".join(body_lines)[:60].strip()
-                if sample and sample[:30] not in final_answer:
-                    return (
-                        "Your final_answer did NOT include the actual draft text — "
-                        "it only referenced it (e.g. 'draft is ready'). Daksh cannot "
-                        "see tool Observations, only final_answer. Rewrite final_answer "
-                        "to include the FULL draft content (To, Subject, Body) copied "
-                        "directly from the gmail_draft Observation, word for word."
-                    )
+                body_text = " ".join(body_lines)
+                body_words = [w.lower() for w in re.findall(r"[A-Za-z]{4,}", body_text)]
+                sample_words = body_words[:20] if len(body_words) > 20 else body_words
+
+                if sample_words:
+                    final_lower = final_answer.lower()
+                    matched = sum(1 for w in sample_words if w in final_lower)
+                    overlap_ratio = matched / len(sample_words)
+
+                    if overlap_ratio < 0.5:
+                        return (
+                            "Your final_answer did NOT include the actual draft text — "
+                            "it only referenced it (e.g. 'draft is ready'). Daksh cannot "
+                            "see tool Observations, only final_answer. Rewrite final_answer "
+                            "to include the FULL draft content (To, Subject, Body) copied "
+                            "directly from the gmail_draft Observation, word for word."
+                        )
 
         # Check 2: If calendar_delete was called but confirm_delete was NOT,
-        # the model must NOT claim the event was deleted
-        if self._pending_calendar_delete:
+        # the model must NOT claim the event was deleted. Only enforced for
+        # the turn it was set on or the immediately next turn — an
+        # unconfirmed delete from many turns ago shouldn't keep flagging
+        # unrelated future answers.
+        delete_turn_age = self._turn_counter - self._pending_calendar_delete_turn
+        if self._pending_calendar_delete and delete_turn_age <= 1:
             false_delete_phrases = [
                 "deleted successfully", "has been deleted", "removed from",
                 "successfully deleted", "event deleted", "deletion complete"
@@ -204,8 +232,10 @@ class Orchestrator:
 
         # Check 3: A tool call failed (returned an Error observation) but
         # final_answer describes success anyway — catch this generically
-        # across ALL tools, not just drafts/deletes
-        if self._last_tool_error is not None:
+        # across ALL tools, not just drafts/deletes. Same 1-turn expiry as
+        # above — a stale error from several turns ago shouldn't keep firing.
+        error_turn_age = self._turn_counter - self._last_tool_error_turn
+        if self._last_tool_error is not None and error_turn_age <= 1:
             action_name, error_text = self._last_tool_error
             success_phrases = [
                 "done!", "successfully", "created", "scheduled", "sent",
@@ -310,6 +340,7 @@ class Orchestrator:
                                 message so the model has conversational context
         """
         # Build message list: system → prior history → current user message
+        self._turn_counter += 1
         messages = [{"role": "system", "content": self._system_prompt()}]
 
         if conversation_history:
@@ -377,10 +408,19 @@ class Orchestrator:
                             f"{final_answer}\n\n"
                             f"{self._last_draft_body}"
                         )
+                        # Draft validation is same-turn-only by design — clear it
+                        # now so it never leaks into unrelated future turns
+                        self._last_draft_body = None
                         self._auto_memorize(user_input, forced_answer, messages, verbose)
                         return forced_answer
 
                 self._draft_validation_retries = 0
+                # Draft validation is same-turn-only by design — clear it now
+                # so it never leaks into unrelated future turns (this was the
+                # root cause of a stale draft being force-appended to answers
+                # many turns later, e.g. after switching to schedule_email_send
+                # instead of gmail_send)
+                self._last_draft_body = None
                 # Auto-memory: after every answer, check if anything is worth saving
                 self._auto_memorize(user_input, str(final_answer), messages, verbose)
                 return str(final_answer)

@@ -6,6 +6,7 @@ This module doesn't own the scheduler itself — it holds a reference set by
 the bot at startup (same set_scheduler() pattern as set_llm_client()).
 """
 from datetime import datetime, timedelta
+import re
 
 _scheduler = None  # set by the bot via set_scheduler()
 
@@ -180,6 +181,63 @@ def schedule_email_send(args: dict) -> str:
     )
 
 
+def schedule_content_delivery(args: dict) -> str:
+    """
+    Schedule already-prepared content (a diagram, voice message, or plain
+    text) to be delivered at a specific future time — WITHOUT regenerating
+    it. Use this when Daksh wants something made NOW but sent to him LATER,
+    unchanged. First call the appropriate tool (generate_diagram, speak, etc.)
+    to create the content, THEN call this with the exact result text
+    (including any file path it mentions, e.g. 'outputs/diagram_x.png') so
+    it gets attached automatically at delivery time.
+    Args:
+      text (str) — the finalized message to deliver, including any file
+                   path from a prior tool result if relevant
+      time (str) — when to deliver: '15:00', '3pm', 'tomorrow 9am', or a
+                   full datetime like '2026-07-01 15:00'
+      name (str, optional) — short label for this delivery
+    """
+    if not _scheduler:
+        return "Error: scheduler not initialized"
+
+    text   = (args.get("text") or "").strip()
+    time_s = (args.get("time") or "").strip()
+    name   = (args.get("name") or "Scheduled delivery").strip()
+
+    if not text:
+        return "Error: 'text' is required — the already-prepared content to deliver"
+    if not time_s:
+        return "Error: 'time' is required, e.g. '15:00', '3pm', or 'tomorrow 9am'"
+
+    run_at = _parse_time_today_or_tomorrow(time_s)
+    if not run_at:
+        return f"Error: couldn't parse time '{time_s}' — try '15:00', '3pm', or 'tomorrow 9am'"
+
+    task_id = _scheduler.add_scheduled_delivery(name, text, run_at)
+
+    # Strip any file paths from the preview shown back to the model — if the
+    # model repeats a raw "outputs/xyz.wav" path in its confirmation message,
+    # the bot's attachment-scanner will find it and send the file EARLY,
+    # before the actual scheduled delivery time. The preview here is only
+    # for the model's own confirmation of what's queued, not for immediate display.
+    preview_text = re.sub(
+        r"([A-Za-z]:[\\/][^\s]*?[\\/]outputs[\\/][\w\-.]+\.\w+|outputs[\\/][\w\-.]+\.\w+)",
+        "[file scheduled for delivery]",
+        text,
+    )
+
+    return (
+        f"Delivery scheduled for {run_at.strftime('%Y-%m-%d %H:%M')}!\n"
+        f"Task ID: {task_id}\n"
+        f"Content type preview (do NOT repeat any file path from this in your "
+        f"confirmation — the file will be delivered automatically at the "
+        f"scheduled time, not now): {preview_text[:150]}{'...' if len(preview_text) > 150 else ''}\n\n"
+        f"Your final_answer should simply confirm WHAT was prepared and WHEN "
+        f"it will be delivered (e.g. 'Voice message recorded, will deliver at "
+        f"11:30 am') — do not mention the file path or attach anything now."
+    )
+
+
 def schedule_daily_task(args: dict) -> str:
     """
     Schedule a task to run automatically every day at a specific time.
@@ -275,6 +333,11 @@ def list_scheduled_tasks(args: dict) -> str:
             run_at = t.get("run_at", "?")[:16].replace("T", " ")
             timing = f"once at {run_at}"
             detail = f"Prompt: {t.get('prompt', '')}"
+        elif t_type == "delivery":
+            run_at = t.get("run_at", "?")[:16].replace("T", " ")
+            timing = f"once at {run_at}"
+            msg_preview = t.get("message", "")[:80]
+            detail = f"Content: {msg_preview}{'...' if len(t.get('message', '')) > 80 else ''}"
         elif t_type == "direct_action":
             run_at = t.get("run_at", "?")[:16].replace("T", " ")
             timing = f"once at {run_at}"

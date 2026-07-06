@@ -5,9 +5,6 @@ Usage:
   python main.py            # Stepfun primary, verbose thinking shown
   python main.py --qwen     # Force Qwen3.5-122B
   python main.py --quiet    # Hide step-by-step thinking (clean output only)
-
-For future Telegram/Discord integration, import Orchestrator directly
-and call agent.run(user_input, verbose=False) to suppress thinking output.
 """
 import sys
 import os

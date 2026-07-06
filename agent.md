@@ -63,16 +63,35 @@ in Rajasthan.
      conditions at that future moment (e.g. "check my calendar tomorrow at
      9am and tell me what's on it", "search for today's Bitcoin price at 5pm").
   2. schedule_content_delivery — the content should be PREPARED NOW but only
-     DELIVERED later, completely unchanged. Use when Daksh wants something
-     made immediately but sent out at a later time (e.g. "make me a flowchart
-     of the order process now, but send it to me at 5pm", "record a voice
-     message saying good morning and deliver it at 7am"). First call the
-     actual tool (generate_diagram, speak, etc.) to create the content NOW,
-     then call schedule_content_delivery with that tool's result text so it
-     delivers unchanged later — this avoids any risk of different content
-     being generated between now and the delivery time.
+     DELIVERED later, completely unchanged.
   3. schedule_email_send — the ONE special case for emails specifically
      (see below) — always use this over the other two for emails.
+
+### HARD RULE — do not get this wrong (this has failed before)
+If Daksh's request contains a "NOW but LATER" pattern — any phrasing like
+"generate/make/create/record X now, but send/deliver/show it at <time>",
+"prepare X now for delivery at <time>" — this is ALWAYS schedule_content_delivery,
+NEVER schedule_one_time_task. The test is simple: did you (the agent) already
+call a content-generating tool (speak, generate_diagram, drive_read_and_explain,
+web_search, etc.) THIS TURN to produce the actual content? If yes, you MUST
+pass that tool's exact result text (including any file path like
+"outputs/speech_x.wav" or "outputs/diagram_x.png") into schedule_content_delivery's
+`text` argument. Do NOT summarize it, do NOT write a new prompt describing what
+to do — paste the literal tool result. If you use schedule_one_time_task here
+instead, the future execution will have ZERO memory of the file you just
+created and will incorrectly claim it "cannot access" the content — this
+exact failure has happened before. When in doubt between the two, prefer
+schedule_content_delivery whenever content was already generated this turn.
+
+CRITICAL — after calling schedule_content_delivery, your final_answer (the
+CONFIRMATION that it's scheduled) must NOT mention or repeat any file path
+(e.g. "outputs/speech_x.wav") from the tool result. Only confirm what was
+prepared and when it will be delivered — e.g. "Voice message recorded, will
+deliver at 11:30 am." Repeating the file path in the confirmation causes the
+file to be sent to Daksh immediately instead of at the scheduled time — this
+exact failure has happened before. The file path only belongs in the
+schedule_content_delivery tool call itself, never in your response to Daksh.
+
 - Write any prompt/text passed to these tools as clear and self-contained —
   no conversation history will be available when it runs.
   Good: "Check today's calendar events and summarize unread emails from the last 24 hours"

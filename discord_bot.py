@@ -162,13 +162,24 @@ async def on_ready():
         """
         Called from the scheduler's background thread — must hop back onto
         Discord's event loop safely using run_coroutine_threadsafe.
+        Auto-attaches any generated files (diagrams, voice messages) referenced
+        in the message, exactly like live chat responses do.
         """
         async def _send():
             try:
                 user = await client.fetch_user(ALLOWED_USER_ID)
                 dm = await user.create_dm()
-                for chunk in _split_message(message):
-                    await dm.send(chunk)
+
+                attachable = _extract_attachable_files(message)
+                chunks = _split_message(message)
+
+                for i, chunk in enumerate(chunks):
+                    is_last = (i == len(chunks) - 1)
+                    if is_last and attachable:
+                        files = [discord.File(str(p), filename=p.name) for p in attachable]
+                        await dm.send(chunk, files=files)
+                    else:
+                        await dm.send(chunk)
             except Exception as e:
                 logger.error(f"[scheduler] Failed to send scheduled message: {e}")
 

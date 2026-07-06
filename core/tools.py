@@ -607,17 +607,21 @@ TOOLS = {
     "schedule_one_time_task": {
         "func": _schedule_one_time_task,
         "description": (
-            "Schedule ANYTHING to happen ONCE at a future time, then it removes itself. "
-            "This runs the full agent with access to EVERY tool — not just reminders. "
-            "Use for: text reminders, scheduled voice messages (via speak), scheduled "
-            "diagrams (via generate_diagram), delayed calendar/email checks, delayed web "
-            "searches — any one-off future action except sending a pre-confirmed email "
-            "(use schedule_email_send for that specific case). "
-            "NOT for recurring tasks (use schedule_daily_task/schedule_interval_task)."
+            "Schedule a prompt to be run FRESH through the full agent at a future time, "
+            "then it removes itself. Use ONLY when the content must be generated AT that "
+            "future time because it depends on conditions then (e.g. 'check my calendar "
+            "tomorrow at 9am', 'search today's stock price at 5pm'). "
+            "DO NOT use this if you are generating content (a voice message via speak, "
+            "a diagram via generate_diagram, etc.) RIGHT NOW in this turn and Daksh just "
+            "wants it delivered later unchanged — that case is schedule_content_delivery, "
+            "NOT this tool. Using this tool for already-generated content means the future "
+            "run will have no memory of what you made and will fail. "
+            "NOT for recurring tasks (use schedule_daily_task/schedule_interval_task). "
+            "NOT for emails (use schedule_email_send)."
         ),
         "args_schema": {
             "name":   "string — short name for the task",
-            "prompt": "string — self-contained instruction to run at that time (no conversation history will be available then — make it clear and standalone, e.g. 'Generate a voice message saying good morning' or 'Create a flowchart diagram of X')",
+            "prompt": "string — self-contained instruction to run at that time (no conversation history will be available then — make it clear and standalone, e.g. 'Check calendar for today and list events' or 'Search for current Bitcoin price and report it')",
             "time":   "string — when to run: '15:00', '3pm', 'tomorrow 9am', or a full datetime like '2026-07-01 15:00'",
         },
     },
@@ -739,3 +743,4 @@ def init_tools(llm_client) -> None:
 
     from tools.sheets import set_llm_client as set_sheets_llm
     set_sheets_llm(llm_client)
+

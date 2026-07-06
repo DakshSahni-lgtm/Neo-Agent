@@ -102,6 +102,12 @@ class AgentScheduler:
                 result = handler(action_data)
                 message = f"⏰ Scheduled action completed: {name}\n\n{result}"
 
+            elif kind == "deliver":
+                # Pre-finalized content — deliver exactly as stored, no
+                # regeneration, no LLM involvement
+                print(f"[scheduler] Delivering scheduled content '{task_id}': {name}")
+                message = f"⏰ {name}\n\n{task['message']}"
+
             else:
                 # Standard prompt-based task — runs through the agent
                 prompt = task["prompt"]
@@ -119,9 +125,9 @@ class AgentScheduler:
                 pass
 
         finally:
-            # One-time tasks (one_time / direct_action) remove themselves
-            # after firing — recurring tasks (daily / interval) persist
-            if task.get("type") in ("one_time", "direct_action"):
+            # One-time tasks (one_time / direct_action / delivery) remove
+            # themselves after firing — recurring tasks (daily / interval) persist
+            if task.get("type") in ("one_time", "direct_action", "delivery"):
                 self._tasks.pop(task_id, None)
                 self._save_tasks()
 
@@ -201,6 +207,31 @@ class AgentScheduler:
         self._save_tasks()
         return task_id
 
+    def add_scheduled_delivery(self, name: str, message: str, run_at: datetime) -> str:
+        """
+        Schedule already-finalized content (text, and/or a reference to a
+        file already generated on disk — a diagram image, a voice message)
+        to be DELIVERED at a specific time, without re-running the agent or
+        regenerating anything. Use when content should be prepared NOW and
+        just sent out LATER, unchanged — e.g. "make this diagram now but
+        send it to me at 5pm" or "record this voice message and send it
+        at 8am". The message text can reference a file path (e.g.
+        'outputs/diagram_x.png') — bots auto-attach files mentioned this way.
+        """
+        task_id = str(uuid.uuid4())[:8]
+        self._tasks[task_id] = {
+            "id": task_id, "name": name,
+            "kind": "deliver", "type": "delivery",
+            "message": message,
+            "run_at": run_at.isoformat(),
+        }
+        self.scheduler.add_job(
+            self._run_task, trigger=DateTrigger(run_date=run_at),
+            args=[task_id], id=task_id,
+        )
+        self._save_tasks()
+        return task_id
+
     # ── Common management ─────────────────────────────────────────────────────
 
     def cancel_task(self, task_id: str) -> bool:
@@ -245,7 +276,7 @@ class AgentScheduler:
                     trigger = CronTrigger(hour=task["hour"], minute=task["minute"])
                 elif task_type == "interval":
                     trigger = IntervalTrigger(minutes=task["minutes"])
-                elif task_type in ("one_time", "direct_action"):
+                elif task_type in ("one_time", "direct_action", "delivery"):
                     run_at = datetime.fromisoformat(task["run_at"])
                     if run_at <= now:
                         # Scheduled time already passed while bot was offline —

@@ -76,16 +76,46 @@ def _send_to_telegram(message: str) -> None:
     Send a message directly via Telegram's HTTP Bot API — used by the
     scheduler's background thread, which has no access to the bot's
     async event loop. A plain HTTP POST works from any thread.
+    Auto-attaches any generated files (diagrams, voice messages) referenced
+    in the message, exactly like live chat responses do.
     """
     import requests
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    # Telegram caps messages at 4096 chars — chunk if needed
+
+    base_url = f"https://api.telegram.org/bot{BOT_TOKEN}"
+
+    # Telegram caps text messages at 4096 chars — chunk if needed
     for i in range(0, len(message), 4000):
         chunk = message[i:i + 4000]
         try:
-            requests.post(url, json={"chat_id": ALLOWED_USER_ID, "text": chunk}, timeout=15)
+            requests.post(
+                f"{base_url}/sendMessage",
+                json={"chat_id": ALLOWED_USER_ID, "text": chunk},
+                timeout=15,
+            )
         except Exception as e:
             logger.error(f"[scheduler] Failed to send scheduled message: {e}")
+
+    # Attach any referenced files (diagrams, voice messages) as real
+    # Telegram media, not just a text path the user can't open
+    for file_path in _extract_attachable_files(message):
+        ext = file_path.suffix.lower()
+        try:
+            if ext in IMAGE_EXTS:
+                endpoint, field = "sendPhoto", "photo"
+            elif ext in VOICE_EXTS:
+                endpoint, field = "sendVoice", "voice"
+            else:
+                endpoint, field = "sendDocument", "document"
+
+            with open(file_path, "rb") as f:
+                requests.post(
+                    f"{base_url}/{endpoint}",
+                    data={"chat_id": ALLOWED_USER_ID},
+                    files={field: f},
+                    timeout=30,
+                )
+        except Exception as e:
+            logger.error(f"[scheduler] Failed to send scheduled attachment {file_path}: {e}")
 
 
 # Set up the proactive scheduler — safe to do at import time since the

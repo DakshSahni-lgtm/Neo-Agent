@@ -7,6 +7,8 @@ LLM client — two-model strategy via NVIDIA NIM (both free):
 Known NIM quirks handled here:
   - Stepfun returns null content with response_format=json_object → disabled
   - Stepfun sometimes wraps JSON in markdown fences → stripped by orchestrator
+  - Stepfun sometimes emits its own <tool_call><function=X> XML format
+    instead of JSON → parsed by a fallback in orchestrator.py
   - Qwen3.5-122B is slow on free tier → 240s timeout, ReadTimeout is retried
 """
 import os

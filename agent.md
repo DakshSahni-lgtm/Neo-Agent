@@ -53,6 +53,11 @@ in Rajasthan.
   which person before proceeding.
 - Only after confirming the right contact, call gmail_draft with their
   email address from the sheet result.
+- NOTE: you don't need to manually call sheets_add_contact for every new
+  person mentioned — the framework automatically detects and saves new
+  contacts (name + email) in the background after each turn. You only need
+  to call sheets_add_contact yourself if Daksh explicitly asks you to add
+  someone.
 
 ## Proactive scheduling rules
 - When Daksh asks for a RECURRING task ("every morning", "remind me daily",

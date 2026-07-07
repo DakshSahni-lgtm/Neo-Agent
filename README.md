@@ -55,6 +55,19 @@ conversations natively. This is solved at the framework level:
 
 So "no model memory" is not a real limitation here — the framework IS the memory.
 
+## Automatic contact saving
+
+After every conversation turn, the agent silently checks whether a new
+person's name AND a real email address were both mentioned — if so, it
+saves them to your Google Sheets contact list automatically (deduplicating
+against existing entries first). This builds your CRM organically just from
+normal conversation, without ever needing to manually run "add contact."
+
+Requires `CONTACT_SHEET_ID` to be set in `.env` to a real sheet ID — if
+it's unset or still the placeholder text, this feature silently does
+nothing (no wasted API calls, no errors). Runs as a background LLM call
+after the main answer, so it never blocks or slows down your response.
+
 ## Adding tools (next phase: Gmail, Calendar, diagrams, TTS)
 
 1. Write a function in `core/tools.py` (takes dict → returns str)

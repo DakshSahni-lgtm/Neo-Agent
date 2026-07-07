@@ -314,6 +314,187 @@ def test_stale_draft_does_not_leak_into_unrelated_turns():
     print(f"  ✓ Stale draft did not leak into unrelated future turns")
 
 
+def test_auto_save_contacts_extracts_new_person():
+    """
+    When a new person's name AND email are mentioned in a turn, the agent
+    should automatically extract and save them via sheets_add_contact —
+    but only when CONTACT_SHEET_ID is actually configured, and only after
+    checking they don't already exist (deduplication).
+    """
+    print("Running: auto-save contacts extracts new person with name+email...")
+
+    import os
+    os.environ["CONTACT_SHEET_ID"] = "fake_sheet_id_for_test"
+
+    try:
+        scripted = [
+            # Step 1: main agent turn — just answers normally
+            json.dumps({
+                "thought": "Just acknowledging.",
+                "action": None, "action_input": {},
+                "final_answer": "Got it! I'll reach out to Rahul Sharma at rahul.sharma@example.com about the invoice.",
+            }),
+        ]
+        agent = Orchestrator(llm=MockLLM(scripted))
+
+        # auto_memorize and auto_save_contacts each make their own separate
+        # llm.chat() call after the main turn — swap in a second mock that
+        # handles those two extraction prompts in order
+        extraction_responses = [
+            json.dumps({"should_save": False, "facts": []}),  # auto_memorize: nothing to save
+            json.dumps({  # auto_save_contacts: found the new person
+                "contacts": [
+                    {"name": "Rahul Sharma", "email": "rahul.sharma@example.com",
+                     "phone": "", "company": "", "relationship": ""}
+                ]
+            }),
+        ]
+
+        import core.orchestrator as orch_module
+        original_run_tool = orch_module.run_tool
+        add_contact_calls = []
+
+        def fake_run_tool(name, args):
+            if name == "sheets_search_contact":
+                return "No contacts found matching 'Rahul Sharma'."
+            if name == "sheets_add_contact":
+                add_contact_calls.append(args)
+                return f"Contact added successfully!\n  Name: {args['name']}\n  Email: {args['email']}"
+            return original_run_tool(name, args)
+
+        orch_module.run_tool = fake_run_tool
+
+        # Patch agent.llm.chat to serve main response first, then extraction responses
+        call_log = {"n": 0}
+        real_chat = agent.llm.chat if hasattr(agent.llm, "chat") else None
+
+        class SequencedMockLLM:
+            def chat(self, messages):
+                idx = call_log["n"]
+                call_log["n"] += 1
+                if idx == 0:
+                    return scripted[0]
+                return extraction_responses[idx - 1]
+
+        agent.llm = SequencedMockLLM()
+
+        try:
+            result = agent.run("email Rahul Sharma at rahul.sharma@example.com about the invoice")
+        finally:
+            orch_module.run_tool = original_run_tool
+
+        assert len(add_contact_calls) == 1, f"Expected exactly 1 contact save, got {len(add_contact_calls)}"
+        assert add_contact_calls[0]["name"] == "Rahul Sharma"
+        assert add_contact_calls[0]["email"] == "rahul.sharma@example.com"
+        print(f"  ✓ New contact auto-saved: {add_contact_calls[0]['name']} <{add_contact_calls[0]['email']}>")
+
+    finally:
+        del os.environ["CONTACT_SHEET_ID"]
+
+
+def test_auto_save_contacts_skips_when_sheet_not_configured():
+    """
+    If CONTACT_SHEET_ID is unset or still the placeholder value, auto-save
+    must skip entirely (no LLM call, no tool call) rather than erroring.
+    """
+    print("Running: auto-save contacts skips when sheet not configured...")
+
+    import os
+    os.environ.pop("CONTACT_SHEET_ID", None)  # ensure unset
+
+    scripted = [
+        json.dumps({
+            "thought": "Answering.",
+            "action": None, "action_input": {},
+            "final_answer": "Sure, I'll email John Doe at john@example.com.",
+        }),
+    ]
+    agent = Orchestrator(llm=MockLLM(scripted))
+
+    import core.orchestrator as orch_module
+    original_run_tool = orch_module.run_tool
+    tool_calls = []
+
+    def fake_run_tool(name, args):
+        tool_calls.append(name)
+        return original_run_tool(name, args)
+
+    orch_module.run_tool = fake_run_tool
+    try:
+        result = agent.run("email John Doe at john@example.com")
+    finally:
+        orch_module.run_tool = original_run_tool
+
+    assert "sheets_add_contact" not in tool_calls, (
+        "sheets_add_contact should never be called when CONTACT_SHEET_ID is unset"
+    )
+    print(f"  ✓ Auto-save correctly skipped with no contact sheet configured")
+
+
+def test_memory_curator_never_saves_email_addresses():
+    """
+    Reproduces the exact bug: a contact's email address ended up saved in
+    memory.md instead of (or in addition to) the Sheets contact list, because
+    the memory curator's own rules listed 'contacts' as save-worthy. Even if
+    the LLM curator ignores the updated prompt and tries to save a fact
+    containing an email, the defensive filter must catch and skip it.
+    """
+    print("Running: memory curator never saves facts containing email addresses...")
+
+    memory_curator_response = json.dumps({
+        "should_save": True,
+        "facts": [
+            "Priya's email is priya@example.com",   # should be filtered out
+            "Priya works at River Tech as a client",  # should be saved (no email)
+        ],
+    })
+
+    import core.orchestrator as orch_module
+    original_run_tool = orch_module.run_tool
+    saved_notes = []
+
+    def fake_run_tool(name, args):
+        if name == "append_memory":
+            saved_notes.append(args.get("note", ""))
+            return f"Saved to memory: {args.get('note', '')}"
+        return original_run_tool(name, args)
+
+    orch_module.run_tool = fake_run_tool
+
+    scripted = [
+        json.dumps({
+            "thought": "Answering.",
+            "action": None, "action_input": {},
+            "final_answer": "Got it — I'll loop in Priya at priya@example.com.",
+        }),
+    ]
+    agent = Orchestrator(llm=MockLLM(scripted))
+
+    class SequencedMockLLM:
+        def __init__(self):
+            self.n = 0
+        def chat(self, messages):
+            self.n += 1
+            if self.n == 1:
+                return scripted[0]
+            return memory_curator_response
+
+    agent.llm = SequencedMockLLM()
+
+    try:
+        agent.run("loop in Priya at priya@example.com on this project")
+    finally:
+        orch_module.run_tool = original_run_tool
+
+    assert not any("priya@example.com" in n for n in saved_notes), (
+        f"Email address leaked into memory.md despite the defensive filter: {saved_notes}"
+    )
+    assert any("River Tech" in n for n in saved_notes), (
+        f"Legitimate non-contact fact was incorrectly filtered out too: {saved_notes}"
+    )
+    print(f"  ✓ Email address filtered out of memory.md, other facts still saved normally")
+
+
 if __name__ == "__main__":
     test_memory_tool()
     test_direct_answer()
@@ -321,4 +502,7 @@ if __name__ == "__main__":
     test_tool_error_hallucination_caught()
     test_stepfun_xml_tool_call_format_parsed()
     test_stale_draft_does_not_leak_into_unrelated_turns()
+    test_auto_save_contacts_extracts_new_person()
+    test_auto_save_contacts_skips_when_sheet_not_configured()
+    test_memory_curator_never_saves_email_addresses()
     print("\nAll tests passed.")

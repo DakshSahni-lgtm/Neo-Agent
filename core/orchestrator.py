@@ -412,6 +412,7 @@ class Orchestrator:
                         # now so it never leaks into unrelated future turns
                         self._last_draft_body = None
                         self._auto_memorize(user_input, forced_answer, messages, verbose)
+                        self._auto_save_contacts(user_input, forced_answer, verbose)
                         return forced_answer
 
                 self._draft_validation_retries = 0
@@ -423,6 +424,9 @@ class Orchestrator:
                 self._last_draft_body = None
                 # Auto-memory: after every answer, check if anything is worth saving
                 self._auto_memorize(user_input, str(final_answer), messages, verbose)
+                # Auto-contacts: after every answer, check if a new person's
+                # name+email was mentioned and save them to the Sheets contact list
+                self._auto_save_contacts(user_input, str(final_answer), verbose)
                 return str(final_answer)
 
             messages.append({"role": "assistant", "content": json.dumps(parsed)})
@@ -462,12 +466,17 @@ Agent: {final_answer}
 
 Rules for what to save:
 - Preferences ("prefers X over Y", "likes/dislikes X")
-- Names, contacts, relationships ("Vansh is a business partner")
+- Relationship context about people WITHOUT their raw contact details
+  (e.g. "Vansh is a business partner", "Rahul is a River Tech client" — but
+  NEVER save someone's email address or phone number here)
 - Ongoing projects or decisions made ("decided to use Next.js for X project")
 - Important facts about Daksh's work or life
 - Technical context (tools used, stack decisions)
 - DO NOT save: greetings, generic questions, things already in memory,
   temporary info (current email, today's tasks), or anything forgettable
+- DO NOT save email addresses, phone numbers, or other raw contact details —
+  those are automatically saved to the Google Sheets contact list by a
+  separate dedicated system. Saving them here would create duplicates.
 
 Respond with ONLY a JSON object, no markdown:
 {{
@@ -489,11 +498,107 @@ If nothing new is worth saving, set should_save to false and facts to [].
             if result.get("should_save") and result.get("facts"):
                 for fact in result["facts"]:
                     fact = fact.strip()
-                    if fact:
-                        run_tool("append_memory", {"note": fact})
+                    if not fact:
+                        continue
+                    # Defensive safety net: skip any fact that looks like it
+                    # contains a raw email address, even though the prompt
+                    # above already instructs against this — contact details
+                    # belong exclusively in the Sheets contact system
+                    # (_auto_save_contacts), never duplicated into memory.md.
+                    if re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", fact):
                         if verbose:
-                            print(f"[memory] auto-saved: {fact}")
+                            print(f"[memory] skipped fact with email address (belongs in contacts): {fact}")
+                        continue
+                    run_tool("append_memory", {"note": fact})
+                    if verbose:
+                        print(f"[memory] auto-saved: {fact}")
 
         except Exception as e:
             if verbose:
                 print(f"[memory] auto-memorize skipped ({type(e).__name__}: {e})")
+
+    def _auto_save_contacts(
+        self,
+        user_input: str,
+        final_answer: str,
+        verbose: bool,
+    ) -> None:
+        """
+        After every turn, check if a NEW person's name AND email address were
+        both explicitly mentioned in the conversation, and if so, save them
+        to the Google Sheets contact list automatically — building the CRM
+        organically over time without Daksh needing to manually add people.
+
+        Best-effort and silent: checks CONTACT_SHEET_ID is configured first,
+        deduplicates against existing contacts via sheets_search_contact,
+        and never blocks or errors out the main answer on any failure.
+        """
+        import os
+        contact_sheet_id = os.environ.get("CONTACT_SHEET_ID", "")
+        if not contact_sheet_id or contact_sheet_id == "your_sheet_id_here":
+            return  # no real contact sheet configured — nothing to save to
+
+        combined_text = f"User: {user_input}\nAgent: {final_answer}"
+
+        prompt = f"""You are a contact extraction assistant. Look at this single
+conversation turn and identify any person whose NAME and EMAIL ADDRESS are
+BOTH explicitly present in the text (not implied, not guessed, not invented).
+
+CONVERSATION TURN:
+{combined_text}
+
+Rules:
+- Only extract if an ACTUAL email address is visible (contains @ and a domain).
+- Never invent or guess an email address from a name alone.
+- phone/company/relationship are optional — include only if explicitly stated
+  in this text, otherwise leave them as empty strings.
+- If the same person's info was just looked up (not newly introduced), skip them.
+
+Respond with ONLY a JSON object, no markdown:
+{{
+  "contacts": [
+    {{"name": "...", "email": "...", "phone": "", "company": "", "relationship": ""}}
+  ]
+}}
+If no new person with both a name and an email is present, return {{"contacts": []}}.
+"""
+
+        try:
+            raw = self.llm.chat([{"role": "user", "content": prompt}])
+            raw = re.sub(r"^```(json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE).strip()
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if not match:
+                return
+            result = json.loads(match.group(0))
+            contacts = result.get("contacts", [])
+
+            for c in contacts:
+                name  = (c.get("name") or "").strip()
+                email = (c.get("email") or "").strip()
+
+                if not name or not email or "@" not in email or "." not in email.split("@")[-1]:
+                    continue  # not a real-looking email, skip
+
+                # Deduplicate: check if this person (by name) already exists
+                # with this email before adding a new row
+                search_result = run_tool("sheets_search_contact", {"name": name})
+                if email.lower() in search_result.lower():
+                    continue  # already saved with this exact email — skip
+
+                add_result = run_tool("sheets_add_contact", {
+                    "name": name,
+                    "email": email,
+                    "phone": c.get("phone", ""),
+                    "company": c.get("company", ""),
+                    "relationship": c.get("relationship", ""),
+                })
+
+                if verbose:
+                    if add_result.startswith("Error"):
+                        print(f"[contacts] auto-save failed for {name}: {add_result}")
+                    else:
+                        print(f"[contacts] auto-saved: {name} <{email}>")
+
+        except Exception as e:
+            if verbose:
+                print(f"[contacts] auto-save skipped ({type(e).__name__}: {e})")
